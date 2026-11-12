@@ -36,7 +36,7 @@ function Run([string]$File, [string[]]$Arguments) {
 }
 $include = @('src/loader','src/resident','src/features','src/shared','profiles','third_party/imgui','third_party/detours/src') | ForEach-Object { '/I' + $_ }
 $include += '/I' + $out
-$flags = @('/nologo','/W4','/MT','/O2','/utf-8','/DUNICODE','/D_UNICODE','/FIsrc/shared/istaroth_imgui_config.h') + $include
+$flags = @('/nologo','/W4','/MT','/O2','/utf-8','/DUNICODE','/D_UNICODE','/FIistaroth_imgui_config.h') + $include
 function CompileCpp([string]$Name,[string[]]$Arguments) {
     Run $compiler (@('/std:c++17','/EHsc') + $flags + @(('/Fo:' + $out + '/'), ('/Fe:' + (Join-Path $out $Name))) + $Arguments)
 }
