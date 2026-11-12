@@ -34,7 +34,7 @@ function Run([string]$File, [string[]]$Arguments) {
     & $File @Arguments | Out-File -LiteralPath (Join-Path $out 'build.log') -Append -Encoding utf8
     if ($LASTEXITCODE) { throw "Build command failed ($LASTEXITCODE): $File; see out/build.log." }
 }
-$include = @('src/loader','src/resident','src/features','src/shared','profiles','third_party/imgui','third_party/detours/src') | ForEach-Object { '/I' + (Join-Path $root $_) }
+$include = @('src/loader','src/resident','src/features','src/shared','profiles','third_party/imgui','third_party/detours/src') | ForEach-Object { '/I' + $_ }
 $include += '/I' + $out
 $flags = @('/nologo','/W4','/MT','/O2','/utf-8','/DUNICODE','/D_UNICODE') + $include
 function CompileCpp([string]$Name,[string[]]$Arguments) {
