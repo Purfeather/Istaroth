@@ -12,6 +12,8 @@ pwsh -NoProfile -File ./build.ps1
 
 out/ 包含五个重建组件、自有宿主／测试、build.json 和 test-results.json。测试只操作自己创建的进程与模拟 Win32 状态，不访问游戏。不把 out/ 整目录直接当发行包。
 
+源码保留原始文件字节，Git 不自动转换换行，避免依赖固定哈希在 Windows 检出后失效。需要本地离屏图标校验时，安装系统中文字体后运行 `python tests/check_icons.py ./out ./out-slim`。
+
 源码布局：src/loader 为加载器，src/resident 为菜单与驻留控制，src/features 为三个功能 DLL，src/shared 为共享 ABI，profiles/ 为当前版本的最小兼容性数据。
 
 当前公开构建统一使用 MSVC C11/C++17。历史已验收包的两个 C DLL 使用 Zig，Detours 使用历史 vendor 库；这两条构建链不保证产生相同字节。新源码构建不是既有实机验收记录的对象。
