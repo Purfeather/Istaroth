@@ -9,9 +9,10 @@
 - [x] v0.1.1 新构建清理历史工作区路径；旧版本归档保持原样。
 - [x] 用户已补充 Bot 图标的非商业游戏二创使用说明，相关角色和第三方素材权利单独说明。
 - [x] 项目说明与发布文档完成本地润色，去除多余套话与过度防御措辞。
-- [ ] GitHub Actions 托管 Runner 远端 CI 构建验证（建仓后执行）。
 - [x] [Purfeather/Istaroth](https://github.com/Purfeather/Istaroth) 私有空仓库已创建，不初始化 README、许可证或分支。
-- [ ] 本地 main 首次代码推送。
-- [ ] v0.1.1 Release 创建与归档上传。
 
-当前状态：**私有空仓库已建立，代码与 Release 尚未上传**。测试、归档校验和本地源码提交见工作区发布准备报告。
+## 发布执行
+
+main 推送后运行远端 CI，检查通过才发布 v0.1.1。Release 使用原验收包及其 SHA-256 文件，不替换程序内容，仓库保持私有。
+
+执行结果见 [GitHub Actions](https://github.com/Purfeather/Istaroth/actions) 和 [Releases](https://github.com/Purfeather/Istaroth/releases)。

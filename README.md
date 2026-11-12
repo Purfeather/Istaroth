@@ -29,4 +29,4 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 
 源码采用 Apache-2.0（第三方与素材例外见各自声明）。Copyright 2026 Istaroth contributors。
 
-当前版本 v0.1.1 已由用户实机测试通过，确认首次启动、路径与配置保存、菜单唤起与鼠标恢复正常（见 [验收记录](docs/accepted-v0.1.1.json)）。已测试归档与各组件哈希保持不变。当前处于本地登记状态，GitHub 暂未公开发布。
+当前版本 v0.1.1 已由用户实机测试通过，确认首次启动、路径与配置保存、菜单唤起与鼠标恢复正常（见 [验收记录](docs/accepted-v0.1.1.json)）。已测试归档与各组件哈希保持不变。项目在私有仓库维护，[构建结果](https://github.com/Purfeather/Istaroth/actions)与[版本归档](https://github.com/Purfeather/Istaroth/releases)以对应页面为准。

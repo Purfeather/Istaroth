@@ -7,7 +7,20 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify source and dependency integrity
+        shell: pwsh
+        run: python -B tools/check_public_tree.py
       - name: Build pinned toolchain and run owned fixtures
         shell: pwsh
-        run: ./build.ps1
+        run: ./build.ps1 -Slim -OutputDirectory ./out-slim
+      - name: Show build and test diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($file in @('out-slim/build.log', 'out-slim/test-results.json')) {
+            if (Test-Path -LiteralPath $file) {
+              Write-Output $file
+              Get-Content -LiteralPath $file -Tail 120
+            }
+          }
       # CI does not install the game, inject into it, or publish releases.
