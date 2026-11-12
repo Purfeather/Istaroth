@@ -1,0 +1,60 @@
+{
+  "formal_version": "0.1.1",
+  "registered_at": "2026-11-13T03:00:56.165611+08:00",
+  "acceptance_source": "user-reported live test",
+  "passed": true,
+  "user_statement": "我已完成实机测试，首次启动、路径与配置保存、菜单和鼠标恢复都正常。将当前版本登记为 v0.1.1，保存验收记录，GitHub 继续暂不发布。",
+  "accepted_scenarios": [
+    "首次启动",
+    "路径保存",
+    "配置保存",
+    "菜单",
+    "鼠标恢复"
+  ],
+  "artifact": {
+    "path": "releases/Istaroth-v0.1.1-candidate-win64.zip",
+    "sha256": "51ddff4fdbffd4516619caca07ac6e19d99a953dadc83bd906350ebd82b2a983",
+    "bytes": 838520,
+    "initial_file_count": 6,
+    "files": {
+      "Istaroth.dll": {
+        "bytes": 692224,
+        "sha256": "1316b69e08f165fb8cd182f8bf3f166eef216c7edfe9675f73ba45d56d6c0df0"
+      },
+      "Istaroth.exe": {
+        "bytes": 368640,
+        "sha256": "344a8131d3607bab6660635ce28a8bfa1eacb282c7865d1a91cfc213013692f6"
+      },
+      "LICENSES.txt": {
+        "bytes": 29392,
+        "sha256": "3be13820bc62f140ab602335e26bfc3d27a0632a06c306535e2e1972ed0b5483"
+      },
+      "dialogue_actions.dll": {
+        "bytes": 169472,
+        "sha256": "70fcba6368a77d4694266b58cf281dbb742dbbe2386fc9e24fbcc24447388681"
+      },
+      "story_probe.dll": {
+        "bytes": 124928,
+        "sha256": "5f3a420acab96e2948a2663f088f9ddf1cbcb4999e83f5653b8b61480ba9696b"
+      },
+      "time_core.dll": {
+        "bytes": 108032,
+        "sha256": "ec4e4f0742a14e47e744e30faf78229d9ff906f399af0e62ab1acc243331b54a"
+      }
+    }
+  },
+  "source_build_commit": "b2e252489918284bcda2c5919481a67706106dd4",
+  "agent_repeated_live_tests": false,
+  "program_modified": false,
+  "archive_modified": false,
+  "github_published": false,
+  "github_publication": "on hold by explicit user request",
+  "historical_status": "Original candidate name, archive and build-time manifests remain unchanged; this record supersedes their pending live-test status for this exact artifact.",
+  "not_claimed": [
+    "穷尽性的异常／故障路径测试",
+    "所有DPI、多屏与覆盖层组合",
+    "所有安装目录权限与迁移场景",
+    "后续重建产物的实机验收",
+    "GitHub托管CI运行结果"
+  ]
+}

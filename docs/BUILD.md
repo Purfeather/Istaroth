@@ -8,22 +8,35 @@ pwsh -NoProfile -File ./build.ps1
 ./build.ps1 -VcTools '<MSVC Tools/14.44.35207>' -SdkRoot '<Windows Kits/10>'
 ```
 
-脚本自动定位标准安装，工具链不匹配明确失败；CI 同样执行该入口。托管 CI 尚未在远端运行，若 runner 未安装指定组件，须安装锁定版本后再运行，不自动改用浮动版本。
+脚本会自动定位标准 Visual Studio 安装路径；CI 流程同样使用此入口。远端 Runner 需安装锁定的工具链版本以保证构建的一致性与可复现性。
 
-out/ 包含五个重建组件、自有宿主／测试、build.json 和 test-results.json。测试只操作自己创建的进程与模拟 Win32 状态，不访问游戏。不把 out/ 整目录直接当发行包。
+`out/` 目录包含五个目标组件、自有模拟宿主／测试程序、`build.json` 和 `test-results.json`。内置测试仅针对模块接口与模拟环境，不直接操作真实游戏进程。发布包需通过专用打包脚本生成。
 
-源码保留原始文件字节，Git 不自动转换换行，避免依赖固定哈希在 Windows 检出后失效。需要本地离屏图标校验时，安装系统中文字体后运行 `python tests/check_icons.py ./out ./out-slim`。
+源码保留原始字节排布，配置 `.gitattributes` 防止换行符自动转换影响校验。如需在本地进行离屏图标校验，可在系统中文字体具备的前提下运行 `python tests/check_icons.py ./out ./out-slim`。
 
-构建在源码根目录使用相对源码／头文件搜索路径，并通过项目配置保留 ImGui 的断言检查与表达式诊断，将断言文件名改为固定组件标签，避免嵌入开发者工作区绝对路径。依赖原始源码不修改。原验收包的驻留 DLL 仍含历史编译路径；保持其字节不变与移除这类信息不能同时满足，因此原包保留作验收归档，要求无本机路径的公开成品需采用另行验收的新构建。
+构建脚本统一使用相对路径，并通过宏定义将 ImGui 断言文件名替换为组件标识，避免二进制中残留本地绝对路径。历史已验收归档包保留原始字节用于校验比对，新构建产物则统一采用脱敏后的相对路径编译。
 
-源码布局：src/loader 为加载器，src/resident 为菜单与驻留控制，src/features 为三个功能 DLL，src/shared 为共享 ABI，profiles/ 为当前版本的最小兼容性数据。
+源码目录结构：
+- `src/loader`：注入与引导加载器
+- `src/resident`：游戏内菜单与驻留控制
+- `src/features`：三个功能 DLL（时钟、对话探针、动作执行）
+- `src/shared`：共享 ABI 与内部协议
+- `profiles/`：当前适配版本的指纹与兼容性数据
 
-当前公开构建统一使用 MSVC C11/C++17。历史已验收包的两个 C DLL 使用 Zig，Detours 使用历史 vendor 库；这两条构建链不保证产生相同字节。新源码构建不是既有实机验收记录的对象。
+当前源码构建统一使用 MSVC（C11 / C++17）编译全部组件，使用官方固定提交的 Detours 源码生成静态库。
 
 ## 游戏更新维护
 
-先通过 `python tools/check_game.py '<YuanShen.exe>'` 做本地文件指纹核验。更新后保留拒绝加载，离线复核 profiles 中每处数据、ABI和模块指纹；完成自有宿主回归及另行实机验收后才能更新支持记录。不能仅修改哈希来允许未知版本。
+游戏版本更新后，不匹配的指纹将自动阻止注入加载。适配维护流程：
+1. 运行 `python tools/check_game.py '<YuanShen.exe>'` 获取新版文件指纹与特征。
+2. 复核并更新 `profiles/` 中的指令特征与结构体偏移。
+3. 运行本地模拟测试套件确认 ABI 与功能逻辑无误。
+4. 完成实机测试验证后，更新支持配置与发布记录。
 
-## 精简候选
+## 六文件精简包打包
 
-`./build.ps1 -Slim -OutputDirectory ./out-slim` 构建独立 v0.1.1 候选，不能覆盖已验收 v0.1.0。`python tools/package.py --slim ./out-slim` 打包六文件候选，仍需实机验收。
+运行命令生成精简发布目录及对应压缩包：
+```powershell
+./build.ps1 -Slim -OutputDirectory ./out-slim
+python tools/package.py --slim ./out-slim
+```
