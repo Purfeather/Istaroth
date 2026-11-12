@@ -1,0 +1,17 @@
+Istaroth
+Copyright 2026 Istaroth contributors
+
+Native implementation, loader and UI maintained for this project.
+Apache-2.0 covers only material contributors are entitled to license.
+
+Dear ImGui: Copyright (c) 2014-2025 Omar Cornut. MIT; see third_party/imgui/LICENSE.txt.
+Microsoft Detours: Copyright (c) Microsoft Corporation. MIT; see third_party/detours/LICENSE.md.
+
+Acknowledgements: Akebi 3.6 dialogue-flow/GameSpeed research (Apache-2.0),
+Snap.Hutao.Remastered / UnlockerIsland FastSkipTalk research (MIT).
+The native features were written in this workspace rather than copying their
+framework/SDK or unconditional patch implementation. Provenance and limitations
+of the source comparison are recorded in docs/PROVENANCE.md.
+
+Genshin Impact names, characters, trademarks and third-party game material are
+not licensed by this software's Apache-2.0 grant. See assets/RIGHTS.md.

@@ -1,0 +1,14 @@
+/out*/
+/dist/
+__pycache__/
+*.pyc
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+*.dll
+*.log
+Istaroth.ini
+Istaroth-injector-result.json

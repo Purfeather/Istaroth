@@ -1,0 +1,13 @@
+name: Native offline build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build pinned toolchain and run owned fixtures
+        shell: pwsh
+        run: ./build.ps1
+      # CI does not install the game, inject into it, or publish releases.

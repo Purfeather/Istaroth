@@ -1,0 +1,7 @@
+{
+  "executable": "YuanShen.exe",
+  "sha256": "8b014f64b5dc12fbc476e0c362b053abfdd7a1378cd282e4ad81057621dbd6b5",
+  "image_size": 459665408,
+  "unknown_versions": "refuse",
+  "profile_form": "Minimal editable native headers; no full game dump or SDK is distributed."
+}

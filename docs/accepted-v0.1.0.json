@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0",
+  "date": "2026-11-13",
+  "acceptance": "user-reported live acceptance",
+  "scenarios": [
+    "first launch waits for manually started game",
+    "successful runtime ACK then path saved",
+    "subsequent launch starts remembered game and initializes Istaroth"
+  ],
+  "baseline_archive_sha256": "bc8bef8a68e2aaa8534b46f73a65b940e9d1a59657afe51a06d156c7624b2a16",
+  "binaries": {
+    "Istaroth.exe": "169b3493d330f78c8508a04a7e778fad67938d10a2a3eb3480991e1843f2de2a",
+    "Istaroth.dll": "f5323187b7a43ff039784c4be76bbcc07e3b32a459103965e7c460ef89642412",
+    "time_core.dll": "c6a1396ea449cd1ed89112dfce01fd66ffb5162543a2f4a953b79b2c394987c4",
+    "story_probe.dll": "9e11789104c7a0d7aebb6c70dd590fef86e5366fffa4489593cb1f455eaaf9c1",
+    "dialogue_actions.dll": "b3ee30c14ee964de9b2b86d39264803afdadfd131118a614ebf829fc26e89344"
+  },
+  "clean_build_live_tested": false
+}

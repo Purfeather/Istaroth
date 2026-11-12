@@ -1,0 +1,379 @@
+{
+  "scope": "Selected actual feature reference files, not a universal copyright clearance",
+  "copied_from_workspace": [
+    {
+      "path": "src/loader/istaroth_injector.cpp",
+      "source": "prototype/native/istaroth_injector.cpp",
+      "origin_sha256": "f706607ca5fe86d951782c83189e37cb7f06e1e71c97764d70027a229305f470",
+      "current_sha256": "f706607ca5fe86d951782c83189e37cb7f06e1e71c97764d70027a229305f470",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/loader/injector_ui.cpp",
+      "source": "prototype/native/injector_ui.cpp",
+      "origin_sha256": "d3a4e316d0a94253f116f84ffd38e8eb2e42e7fa899eefc11fbb8ae210026225",
+      "current_sha256": "d3a4e316d0a94253f116f84ffd38e8eb2e42e7fa899eefc11fbb8ae210026225",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/loader/injector_ui.h",
+      "source": "prototype/native/injector_ui.h",
+      "origin_sha256": "ecbf32d495987c93bce1291812ffea81be88822dc978661bca77c3f78c4e93f2",
+      "current_sha256": "ecbf32d495987c93bce1291812ffea81be88822dc978661bca77c3f78c4e93f2",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/loader/injector.rc",
+      "source": "prototype/native/injector.rc",
+      "origin_sha256": "6012c9c4f6f79c2181e25cadb8b5adde783999da57a9fbef7fda5b1932581e38",
+      "current_sha256": "6012c9c4f6f79c2181e25cadb8b5adde783999da57a9fbef7fda5b1932581e38",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident.cpp",
+      "source": "prototype/native/resident.cpp",
+      "origin_sha256": "2794c18261317586efc3200eda4053a8e9387e02ba6b1f654f3a467bbcef1344",
+      "current_sha256": "2794c18261317586efc3200eda4053a8e9387e02ba6b1f654f3a467bbcef1344",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_renderer.cpp",
+      "source": "prototype/native/resident_renderer.cpp",
+      "origin_sha256": "43c3f29787c26324b64d7e6ebdacf77d5063030d050e2e13086937608be2b137",
+      "current_sha256": "8b141fa23e85ac45ce8f81c136e3df0a46976ff7986d489bff230a411fafb38b",
+      "modified_for_public_tree": true
+    },
+    {
+      "path": "src/resident/resident_ui.cpp",
+      "source": "prototype/native/resident_ui.cpp",
+      "origin_sha256": "706b61e53aa6a20b0d6f5b6ddd7d17482fd8626a5805d9916e2b88113dd8e457",
+      "current_sha256": "706b61e53aa6a20b0d6f5b6ddd7d17482fd8626a5805d9916e2b88113dd8e457",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_ui.h",
+      "source": "prototype/native/resident_ui.h",
+      "origin_sha256": "0081188997b08dc34adb38c8df8efdd6477198e5b1cef7414b928eafd1048670",
+      "current_sha256": "0081188997b08dc34adb38c8df8efdd6477198e5b1cef7414b928eafd1048670",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_control.h",
+      "source": "prototype/native/resident_control.h",
+      "origin_sha256": "07ddf7373c6343be0e4680587f319c130a707baeddc68ebf57e6b63fdd82e304",
+      "current_sha256": "07ddf7373c6343be0e4680587f319c130a707baeddc68ebf57e6b63fdd82e304",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_cursor.h",
+      "source": "prototype/native/resident_cursor.h",
+      "origin_sha256": "40ce6d2946a9439bf467adca79a559316c96e725751f9fc1370da88b17a67ae2",
+      "current_sha256": "40ce6d2946a9439bf467adca79a559316c96e725751f9fc1370da88b17a67ae2",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_icon.h",
+      "source": "prototype/native/resident_icon.h",
+      "origin_sha256": "c7a6fd9afde04ee8015c61225a08e1168a2005d7b0ecee60f4559b60d6d6644d",
+      "current_sha256": "c7a6fd9afde04ee8015c61225a08e1168a2005d7b0ecee60f4559b60d6d6644d",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/resident/resident_internal.h",
+      "source": "prototype/native/resident_internal.h",
+      "origin_sha256": "b603a9d018ef34ea28cdf718f96d684b302fc23d2a90dcf3e0ccf7f5a9c38082",
+      "current_sha256": "b603a9d018ef34ea28cdf718f96d684b302fc23d2a90dcf3e0ccf7f5a9c38082",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/features/time_core.c",
+      "source": "prototype/native/time_core.c",
+      "origin_sha256": "70c831e77d375f6d0f105a1deb1653763b6076a943fe1f7bb01a9131f27af8db",
+      "current_sha256": "70c831e77d375f6d0f105a1deb1653763b6076a943fe1f7bb01a9131f27af8db",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/features/story_probe.c",
+      "source": "prototype/native/story_probe.c",
+      "origin_sha256": "18b9b20c5a0b4d148ff6f042e108b38bb7a951e820357216d95432655ec790b3",
+      "current_sha256": "18b9b20c5a0b4d148ff6f042e108b38bb7a951e820357216d95432655ec790b3",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/features/story_diagnostics.h",
+      "source": "prototype/native/story_diagnostics.h",
+      "origin_sha256": "8c9e5eeb4730403fe111ea7eb16e88a5154d69ecab9d7303cceec9249833daaf",
+      "current_sha256": "8c9e5eeb4730403fe111ea7eb16e88a5154d69ecab9d7303cceec9249833daaf",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/features/dialogue_actions.cpp",
+      "source": "prototype/native/dialogue_actions.cpp",
+      "origin_sha256": "1fc6b1e23036b2f50419938fd436c3a7cfc3882a12e736afbedb9d9f04effc33",
+      "current_sha256": "1fc6b1e23036b2f50419938fd436c3a7cfc3882a12e736afbedb9d9f04effc33",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/features/dialogue_cooldown.asm",
+      "source": "prototype/native/dialogue_cooldown.asm",
+      "origin_sha256": "251b7945ba3df262be5f307e23e52a499a077861d8df6bf94b06b57807a43f00",
+      "current_sha256": "251b7945ba3df262be5f307e23e52a499a077861d8df6bf94b06b57807a43f00",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "src/shared/resident_protocol.h",
+      "source": "prototype/native/resident_protocol.h",
+      "origin_sha256": "0042f2d193964fb697d2fa7fda7a3ecfe719698eae13e61a130657604bae0d67",
+      "current_sha256": "0042f2d193964fb697d2fa7fda7a3ecfe719698eae13e61a130657604bae0d67",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "profiles/time_profile.h",
+      "source": "prototype/native/time_profile.h",
+      "origin_sha256": "f0cd472c0d72d8503d445a6614df5672998b0b5b2315bf5f43c7c100ad9aae27",
+      "current_sha256": "f0cd472c0d72d8503d445a6614df5672998b0b5b2315bf5f43c7c100ad9aae27",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "profiles/story_profile.h",
+      "source": "prototype/native/story_profile.h",
+      "origin_sha256": "5c7c8c20db64367a27db639311c4a54462b4215c4331e35df33a849e06c5c5be",
+      "current_sha256": "5c7c8c20db64367a27db639311c4a54462b4215c4331e35df33a849e06c5c5be",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "profiles/dialogue_actions_profile.h",
+      "source": "prototype/native/dialogue_actions_profile.h",
+      "origin_sha256": "0bfdd029ceaf6b983b7a4c20da0ce14b3ecde2ce295865337a3a7518044970c5",
+      "current_sha256": "0bfdd029ceaf6b983b7a4c20da0ce14b3ecde2ce295865337a3a7518044970c5",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "tests/control_test.cpp",
+      "source": "prototype/native/resident_control_test.cpp",
+      "origin_sha256": "0f91d901f8be1e19eb53fb4aff226e1635c3aefa3ca7ab7046ee88399a0e189b",
+      "current_sha256": "0f91d901f8be1e19eb53fb4aff226e1635c3aefa3ca7ab7046ee88399a0e189b",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "tests/time_host.c",
+      "source": "prototype/native/test_host.c",
+      "origin_sha256": "62a7a16e519b088f0c8f94157c2a5972ea6887b42471bc86293ffd86cfc53be8",
+      "current_sha256": "62a7a16e519b088f0c8f94157c2a5972ea6887b42471bc86293ffd86cfc53be8",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "tests/story_host.c",
+      "source": "prototype/native/story_test_host.c",
+      "origin_sha256": "43be8fa3e933915994ea6f667518bef712f72d3dd67759d5bf455ac1d77e1b45",
+      "current_sha256": "43be8fa3e933915994ea6f667518bef712f72d3dd67759d5bf455ac1d77e1b45",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "tests/ui_snapshot.cpp",
+      "source": "prototype/native/resident_ui_snapshot.cpp",
+      "origin_sha256": "a9fe6a40af6e02761b31f5452f56d25d3bbf8c458ead21fa6ffc3ac1ff263664",
+      "current_sha256": "9aa47ca2a64f23e1a4ff02fa176fe6ff1933859e3a4a72c97e5796d4dd769c91",
+      "modified_for_public_tree": true
+    },
+    {
+      "path": "tests/loader_test.cpp",
+      "source": "research/loader-handoff-20261113/injector_checks.cpp",
+      "origin_sha256": "7fe919a7155b1e77883a2a0823fc3e28b4db3270634e84153c10a029f9ade7ec",
+      "current_sha256": "26e81f52232392c5d2a32df44778ae3cc3ddd72079e37adade48325c2398ccc1",
+      "modified_for_public_tree": true
+    },
+    {
+      "path": "tests/bootstrap_test.cpp",
+      "source": "research/loader-handoff-20261113/bootstrap_check.cpp",
+      "origin_sha256": "d40526fa49e4a0eeead2057a560c275f17a87e2fc16b64396414f0d06400b065",
+      "current_sha256": "d40526fa49e4a0eeead2057a560c275f17a87e2fc16b64396414f0d06400b065",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "tests/cursor_test.cpp",
+      "source": "research/menu-cursor-20261112/cursor_state_test.cpp",
+      "origin_sha256": "0f0d209085cc9eae4e5677414ba3060b239c60f09bedcb5d00b334ec73541153",
+      "current_sha256": "0f0d209085cc9eae4e5677414ba3060b239c60f09bedcb5d00b334ec73541153",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "assets/istaroth-loader.ico",
+      "source": "prototype/assets/istaroth-loader.ico",
+      "origin_sha256": "209fe325342d93d578e33a4fbed99e28aff2ef76c6da15ff3aacbbac0c475852",
+      "current_sha256": "209fe325342d93d578e33a4fbed99e28aff2ef76c6da15ff3aacbbac0c475852",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "assets/istaroth-mark.png",
+      "source": "prototype/assets/istaroth-mark.png",
+      "origin_sha256": "640977ae83b37d27caa800c29e4b98cc97d75fb3fb098caf4b7d75fc3b0b83ec",
+      "current_sha256": "640977ae83b37d27caa800c29e4b98cc97d75fb3fb098caf4b7d75fc3b0b83ec",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/backends/imgui_impl_dx11.cpp",
+      "source": "prototype/third_party/imgui/backends/imgui_impl_dx11.cpp",
+      "origin_sha256": "7a8f7294b86065d514a9e19f1bed3bc84d4587f0142b2c551a584b4067cb2902",
+      "current_sha256": "7a8f7294b86065d514a9e19f1bed3bc84d4587f0142b2c551a584b4067cb2902",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/backends/imgui_impl_dx11.h",
+      "source": "prototype/third_party/imgui/backends/imgui_impl_dx11.h",
+      "origin_sha256": "cf55f23132dcd240c31995494e0828abb84e552adee71be20f384d68eca21697",
+      "current_sha256": "cf55f23132dcd240c31995494e0828abb84e552adee71be20f384d68eca21697",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/backends/imgui_impl_win32.cpp",
+      "source": "prototype/third_party/imgui/backends/imgui_impl_win32.cpp",
+      "origin_sha256": "e572de10045298bbf833aa7a15e28d2777df57603b4e50b9c8aa4c878f1e4cfa",
+      "current_sha256": "e572de10045298bbf833aa7a15e28d2777df57603b4e50b9c8aa4c878f1e4cfa",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/backends/imgui_impl_win32.h",
+      "source": "prototype/third_party/imgui/backends/imgui_impl_win32.h",
+      "origin_sha256": "606df46db972371ac6b5f5ad94bba75a09657da47b259105c4845c1f8638fa0c",
+      "current_sha256": "606df46db972371ac6b5f5ad94bba75a09657da47b259105c4845c1f8638fa0c",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imconfig.h",
+      "source": "prototype/third_party/imgui/imconfig.h",
+      "origin_sha256": "0884061cc43e27e1d346fe18dcd1425792eb2532d3d16610a82eb5ac751f7594",
+      "current_sha256": "0884061cc43e27e1d346fe18dcd1425792eb2532d3d16610a82eb5ac751f7594",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui.cpp",
+      "source": "prototype/third_party/imgui/imgui.cpp",
+      "origin_sha256": "af1cc31255fbf58d57ecc9d727cbd39a84e44fa8f11be7fd419fa0100c5255d8",
+      "current_sha256": "af1cc31255fbf58d57ecc9d727cbd39a84e44fa8f11be7fd419fa0100c5255d8",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui.h",
+      "source": "prototype/third_party/imgui/imgui.h",
+      "origin_sha256": "2d0180859ff85e7fe66ed9999b0f05f2fc45176773046a8f86b3b6bd190b0765",
+      "current_sha256": "2d0180859ff85e7fe66ed9999b0f05f2fc45176773046a8f86b3b6bd190b0765",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui_draw.cpp",
+      "source": "prototype/third_party/imgui/imgui_draw.cpp",
+      "origin_sha256": "9d2d9ee6745d9b98d7f39a16da8ffcf783f90bb8c9e931038fc8e9a15cbe3d84",
+      "current_sha256": "9d2d9ee6745d9b98d7f39a16da8ffcf783f90bb8c9e931038fc8e9a15cbe3d84",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui_internal.h",
+      "source": "prototype/third_party/imgui/imgui_internal.h",
+      "origin_sha256": "1363c617a743957f367afe1c6c88345870b7aa25ee339809fb915466e4fb9575",
+      "current_sha256": "1363c617a743957f367afe1c6c88345870b7aa25ee339809fb915466e4fb9575",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui_tables.cpp",
+      "source": "prototype/third_party/imgui/imgui_tables.cpp",
+      "origin_sha256": "4ea380fa9d49cac6cbfbc8b969969f9b0705518ec9ca340681d8c70e3eefbc28",
+      "current_sha256": "4ea380fa9d49cac6cbfbc8b969969f9b0705518ec9ca340681d8c70e3eefbc28",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imgui_widgets.cpp",
+      "source": "prototype/third_party/imgui/imgui_widgets.cpp",
+      "origin_sha256": "54ac29dbcbe70091f5e5fc2cb4099e6d0b9d1c939e5158f2be983cb508714414",
+      "current_sha256": "54ac29dbcbe70091f5e5fc2cb4099e6d0b9d1c939e5158f2be983cb508714414",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imstb_rectpack.h",
+      "source": "prototype/third_party/imgui/imstb_rectpack.h",
+      "origin_sha256": "2efa3d5f7d003c19743b15155dad9f46d9f9fc783a18893d703b431d3c990972",
+      "current_sha256": "2efa3d5f7d003c19743b15155dad9f46d9f9fc783a18893d703b431d3c990972",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imstb_textedit.h",
+      "source": "prototype/third_party/imgui/imstb_textedit.h",
+      "origin_sha256": "77010e494caf72c178b573569612aec409d24380409676325a31d02de0ec64b7",
+      "current_sha256": "77010e494caf72c178b573569612aec409d24380409676325a31d02de0ec64b7",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/imstb_truetype.h",
+      "source": "prototype/third_party/imgui/imstb_truetype.h",
+      "origin_sha256": "87f08919ae8e7223451d0e9d06b62829075d3e920c9e6ad436db9d7e7427ffce",
+      "current_sha256": "87f08919ae8e7223451d0e9d06b62829075d3e920c9e6ad436db9d7e7427ffce",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/LICENSE.txt",
+      "source": "prototype/third_party/imgui/LICENSE.txt",
+      "origin_sha256": "c80c5789748d955c4a650562baa0d750494e2c7128c2ca66aaebe2e3c4e198bf",
+      "current_sha256": "c80c5789748d955c4a650562baa0d750494e2c7128c2ca66aaebe2e3c4e198bf",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "third_party/imgui/SOURCE.json",
+      "source": "prototype/third_party/imgui/SOURCE.json",
+      "origin_sha256": "1832d03e62684ea1276191247d16e5e077d1896ac2e990c6b4714cb10ccb4492",
+      "current_sha256": "1832d03e62684ea1276191247d16e5e077d1896ac2e990c6b4714cb10ccb4492",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "LICENSE",
+      "source": "references/International/Akebi-3.6/LICENSE",
+      "origin_sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+      "current_sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "licenses/Akebi-Apache-2.0.txt",
+      "source": "references/International/Akebi-3.6/LICENSE",
+      "origin_sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+      "current_sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "licenses/Hutao-MIT.txt",
+      "source": "references/Hutao/Snap.Hutao.Remastered/LICENSE",
+      "origin_sha256": "62753bc77a8602b2158cf54fff52c52336363b4331ce8951ea913541ec6ea79c",
+      "current_sha256": "62753bc77a8602b2158cf54fff52c52336363b4331ce8951ea913541ec6ea79c",
+      "modified_for_public_tree": false
+    },
+    {
+      "path": "licenses/Hutao-UnlockerIsland-MIT.txt",
+      "source": "references/Hutao/Snap.Hutao.Remastered.UnlockerIsland/LICENSE.txt",
+      "origin_sha256": "19200a6a9407e592065a5a504c0eefe58adf102c9ac5aa2151bd6f257faa7a9c",
+      "current_sha256": "19200a6a9407e592065a5a504c0eefe58adf102c9ac5aa2151bd6f257faa7a9c",
+      "modified_for_public_tree": false
+    }
+  ],
+  "reference_comparisons": [
+    {
+      "reference": "references/International/Akebi-3.6/cheat-library/src/user/cheat/world/DialogSkip.cpp",
+      "sha256": "73605e2ffca29a24c170dc07ba36a7dd8e3e1b11dec33d878234c6034c835db7",
+      "longest_exact_sequence": {
+        "matched_significant_lines": 0
+      }
+    },
+    {
+      "reference": "references/International/Akebi-3.6/cheat-library/src/user/cheat/world/GameSpeed.cpp",
+      "sha256": "df5e1fdef307ccd9242becb51a02aa4d93a6c465944e0255af296ed7e5a3e49d",
+      "longest_exact_sequence": {
+        "matched_significant_lines": 0
+      }
+    },
+    {
+      "reference": "references/Hutao/Snap.Hutao.Remastered.UnlockerIsland/src/Snap.Hutao.Remastered.UnlockerIsland/function/FastSkipTalk.cpp",
+      "sha256": "3755342baea1bb470fe5425f7906e949ae3c1ba45a332a16c57afe90a4aa9687",
+      "longest_exact_sequence": {
+        "matched_significant_lines": 0
+      }
+    }
+  ],
+  "notice": "No long upstream function body match found in the selected comparisons; ideas are credited separately."
+}
