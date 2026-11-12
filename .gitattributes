@@ -1,5 +1,3 @@
-* text=auto
+* -text
 *.png binary
 *.ico binary
-*.ps1 text eol=crlf
-*.py text eol=lf
