@@ -82,6 +82,7 @@ int main() {
     ComPtr<ID3D11ComputeShader> compute;Check(SUCCEEDED(host_device->CreateComputeShader(shader_blob->GetBufferPointer(),shader_blob->GetBufferSize(),nullptr,&compute)));host_context->CSSetShader(compute.Get(),nullptr,0);
     D3D11_VIEWPORT viewport{3,4,100,110,0,1};host_context->RSSetViewports(1,&viewport);host_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
     Check(SUCCEEDED(chain->Present(0,0)));Check(RendererReady&&ticks==1&&!renderer_error);
+    int hud_vertices=ImGui::GetDrawData()->TotalVtxCount;Check(hud_vertices>0);
     ComPtr<ID3D11RenderTargetView> restored;host_context->OMGetRenderTargets(1,&restored,nullptr);Check(restored.Get()==view.Get());
     ComPtr<ID3D11ComputeShader> restored_compute;host_context->CSGetShader(&restored_compute,nullptr,nullptr);Check(restored_compute.Get()==compute.Get());
     D3D11_PRIMITIVE_TOPOLOGY topology{};host_context->IAGetPrimitiveTopology(&topology);Check(topology==D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
@@ -89,6 +90,18 @@ int main() {
     unsigned previous_ticks=ticks;Check(SUCCEEDED(chain->Present(0,DXGI_PRESENT_TEST)));Check(ticks==previous_ticks);
     SendMessageW(GameWindow,WM_KEYDOWN,'A',0);Check(original_keys==1);
     SetMenuVisible(true);Pump();Check(MenuVisible&&cursor_count>=0&&foreground==GameWindow);Check(activation_calls==0);
+    {
+        const float background[]={.1f,.2f,.3f,1.f};host_context->ClearRenderTargetView(view.Get(),background);
+        Render(chain.Get(),0);Check(!renderer_error&&ImGui::GetDrawData()->TotalVtxCount>hud_vertices);
+        D3D11_TEXTURE2D_DESC readback{};buffer->GetDesc(&readback);readback.Usage=D3D11_USAGE_STAGING;
+        readback.BindFlags=readback.MiscFlags=0;readback.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> image;Check(SUCCEEDED(host_device->CreateTexture2D(&readback,nullptr,&image)));
+        host_context->CopyResource(image.Get(),buffer.Get());D3D11_MAPPED_SUBRESOURCE mapped{};
+        Check(SUCCEEDED(host_context->Map(image.Get(),0,D3D11_MAP_READ,0,&mapped)));
+        auto corner=(const BYTE*)mapped.pData+(readback.Height-1)*mapped.RowPitch;
+        Check(abs((int)corner[0]-26)<=1&&abs((int)corner[1]-51)<=1&&abs((int)corner[2]-77)<=1&&corner[3]==255);
+        host_context->Unmap(image.Get(),0);Check(SUCCEEDED(chain->Present(0,0)));
+    }
     SendMessageW(GameWindow,WM_KEYDOWN,'B',0);Check(original_keys==1);
     SetMenuVisible(false);Pump();Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15);Check(input_count==0);
     SetMenuVisible(true);Pump();Check(MenuVisible);foreground=(HWND)(ULONG_PTR)123;clip={100,100,200,200};cursor_position={150,150};
