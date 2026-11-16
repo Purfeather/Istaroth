@@ -61,7 +61,7 @@ float4 pixel(Vertex v):SV_TARGET {
         Check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
         D3D11_BUFFER_DESC constant{};constant.ByteWidth=16;constant.BindFlags=D3D11_BIND_CONSTANT_BUFFER;Check(device->CreateBuffer(&constant,nullptr,&parameters));
         D3D11_SAMPLER_DESC sampling{};sampling.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sampling.AddressU=sampling.AddressV=sampling.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sampling.MaxLOD=D3D11_FLOAT32_MAX;
-        sampling.ComparisonFunc=D3D11_COMPARISON_ALWAYS;Check(device->CreateSamplerState(&sampling,&sampler));
+        sampling.ComparisonFunc=D3D11_COMPARISON_ALWAYS;sampling.MaxAnisotropy=1;Check(device->CreateSamplerState(&sampling,&sampler));
         D3D11_RASTERIZER_DESC drawing{};drawing.FillMode=D3D11_FILL_SOLID;drawing.CullMode=D3D11_CULL_NONE;drawing.DepthClipEnable=TRUE;drawing.ScissorEnable=TRUE;
         Check(device->CreateRasterizerState(&drawing,&raster));D3D11_DEPTH_STENCIL_DESC testing{};testing.DepthFunc=D3D11_COMPARISON_ALWAYS;
         testing.FrontFace.StencilFailOp=testing.FrontFace.StencilDepthFailOp=testing.FrontFace.StencilPassOp=D3D11_STENCIL_OP_KEEP;testing.FrontFace.StencilFunc=D3D11_COMPARISON_ALWAYS;testing.BackFace=testing.FrontFace;
