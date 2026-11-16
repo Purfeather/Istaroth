@@ -162,5 +162,13 @@ int wmain() {
     WritePrivateProfileStringW(L"Istaroth",L"GamePath",game.c_str(),entry_ini.c_str());Check(entry(L"OwnedLoader.exe --quiet")==ERROR_REVISION_MISMATCH);
     Check(entry(L"OwnedLoader.exe")==ERROR_REVISION_MISMATCH);Check(entry_title_ok);
     Check(process_starts==0&&terminations==0&&thread_starts==1&&!load_started&&!runtime_ready);
+    auto previous_receipt=Hash(entry_dir+L"Istaroth-injector-result.json");
+    Check(entry(L"OwnedLoader.exe --diagnostics --quiet")==0);
+    Check(Hash(entry_dir+L"Istaroth-injector-result.json")==previous_receipt);
+    WIN32_FIND_DATAW report{};HANDLE reports=FindFirstFileW((entry_dir+L"reports\\Istaroth-report-*.txt").c_str(),&report);
+    Check(reports!=INVALID_HANDLE_VALUE);if(reports!=INVALID_HANDLE_VALUE)FindClose(reports);
+    Check(entry(L"OwnedLoader.exe --diagnostics --quiet --restart")==ERROR_INVALID_PARAMETER);
+    Check(entry(L"OwnedLoader.exe --diagnostics --quiet --invalid")==ERROR_INVALID_PARAMETER);
+    Check(process_starts==0&&terminations==0&&thread_starts==1);
     printf("{\"passed\":true,\"checks\":%u,\"scope\":\"actual close/config/hash/ACK and self-owned-thread tests; process discovery redirected to test process\",\"game_started\":false,\"game_process_accessed\":false}\n",checks);
 }

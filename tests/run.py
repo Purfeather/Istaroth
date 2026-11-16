@@ -104,6 +104,8 @@ def story_test():
 try:
     run('control-test.exe')
     run('cursor-test.exe')
+    run('diagnostics-test.exe')
+    run('renderer-test.exe')
     run('loader-test.exe')
     for mode in ['handover','dead-listed','loaded','crash','repeat','cancel','module-absent']:
         run('bootstrap/bootstrap-test.exe', [mode], out/'tests/bootstrap')

@@ -13,6 +13,10 @@ jobs:
       - name: Build pinned toolchain and run owned fixtures
         shell: pwsh
         run: ./build.ps1 -Slim -OutputDirectory ./out-slim
+      - name: Package development build
+        if: github.ref == 'refs/heads/develop'
+        shell: pwsh
+        run: python -B tools/package.py --slim ./out-slim
       - name: Show build and test diagnostics
         if: always()
         shell: pwsh
@@ -23,4 +27,20 @@ jobs:
               Get-Content -LiteralPath $file -Tail 120
             }
           }
+      - name: Save development package and owned diagnostics
+        if: always() && github.ref == 'refs/heads/develop'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: istaroth-dev-${{ github.sha }}
+          retention-days: 14
+          path: |
+            dist/*
+            out-slim/build.log
+            out-slim/build.json
+            out-slim/test-results.json
+            out-slim/Istaroth.exe
+            out-slim/*.dll
+            out-slim/tests/**/*.exe
+            out-slim/tests/**/*.dll
+            out-slim/tests/owned-renderer.log
       # CI does not install the game, inject into it, or publish releases.

@@ -15,6 +15,7 @@ if (-not $VcTools) {
         $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
         if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Use -VcTools <MSVC Tools/version directory> or an x64 developer shell.' }
         $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not $installation) { throw 'Pinned MSVC installation not found. Install the C++ build tools or pass -VcTools.' }
         $VcTools = Join-Path $installation ('VC/Tools/MSVC/' + $lock.msvc_tools_version)
     }
 }
@@ -46,6 +47,12 @@ function CompileC([string]$Name,[string[]]$Arguments) {
 Push-Location $root
 try {
     '' | Set-Content -LiteralPath (Join-Path $out 'build.log')
+    $version = (Get-Content 'VERSION' -Raw).Trim()
+    if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid VERSION value.' }
+    $revision = & git -c "safe.directory=$root" rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -or $revision -notmatch '^[0-9a-f]{40}$') { $revision = 'unknown'; $dirty = 1 }
+    else { $dirty = [int][bool](& git -c "safe.directory=$root" status --porcelain) }
+    [IO.File]::WriteAllLines("$out/build_identity.h",@('#pragma once',"#define ISTAROTH_BUILD_VERSION `"$version`"","#define ISTAROTH_SOURCE_REVISION `"$revision`"","#define ISTAROTH_SOURCE_DIRTY $dirty"))
     $detoursSources = @('detours','modules','disasm','image','creatwth','disolx86','disolx64','disolia64','disolarm','disolarm64')
     foreach ($name in $detoursSources) {
         Run $compiler @('/nologo','/c','/O2','/MT','/EHsc',('/Fo:' + "$out/detours/$name.obj"),("third_party/detours/src/$name.cpp"))
@@ -86,6 +93,7 @@ try {
     Copy-Item 'assets/istaroth-mark.png' "$out/assets/istaroth-mark.png" -Force
     CompileCpp 'tests/control-test.exe' @('tests/control_test.cpp')
     CompileCpp 'tests/cursor-test.exe' @('tests/cursor_test.cpp','user32.lib')
+    CompileCpp 'tests/diagnostics-test.exe' @('tests/diagnostics_test.cpp')
     CompileCpp 'tests/loader-test.exe' (@('tests/loader_test.cpp','src/loader/injector_ui.cpp',"$out/injector.res") + $loaderLibraries)
     # Bootstrap fixtures use dummy hash-pinned files, never real game discovery.
     Run 'python' @('-B','tools/bootstrap_fixture.py',"$out/tests/bootstrap")
@@ -94,8 +102,9 @@ try {
     Run $compiler ($bootstrapFlags + @('tests/bootstrap_test.cpp','src/loader/injector_ui.cpp',('/Fo:' + "$out/tests/bootstrap/"),('/Fe:' + "$out/tests/bootstrap/bootstrap-test.exe")) + $loaderLibraries)
     CompileCpp 'tests/actions-test.exe' @('tests/actions_test.cpp')
     $uiObjects = @('resident_ui','imgui','imgui_draw','imgui_widgets','imgui_tables','imgui_impl_dx11') | ForEach-Object { "$out/$_.obj" }
+    CompileCpp 'tests/renderer-test.exe' (@('tests/renderer_test.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
     CompileCpp 'tests/ui-snapshot.exe' (@('tests/ui_snapshot.cpp') + $slimFlags + $uiObjects + $uiLibraries)
-    Run 'python' @('-B','tools/build_manifest.py',$root,$out,($(if ($Slim) {'0.1.1-candidate'} else {(Get-Content 'VERSION' -Raw).Trim()})))
+    Run 'python' @('-B','tools/build_manifest.py',$root,$out,$version,($(if ($Slim) {'slim'} else {'standard'})))
     if (-not $SkipTests) { Run 'python' @('-B','tests/run.py',$out) }
     Write-Output "Built all five native binaries from source: $out"
 } finally { Pop-Location }

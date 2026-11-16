@@ -10,5 +10,7 @@ __pycache__/
 *.exe
 *.dll
 *.log
+*.log.*
+/reports/
 Istaroth.ini
 Istaroth-injector-result.json

@@ -12,6 +12,8 @@
 #include "resident_protocol.h"
 #include "resident_payloads.h"
 #include "injector_ui.h"
+#include "diagnostics.h"
+#include "diagnostic_report.h"
 using namespace istaroth;
 
 static std::wstring directory,message=L"正在校验游戏版本与组件…";
@@ -29,11 +31,9 @@ static unsigned handover_count=0;
 static DWORD handover_pid=0,handover_exit=STILL_ACTIVE;
 static const char* operation="starting";
 static void Trace(const char* event,DWORD error=0) {
-    HANDLE file=CreateFileW((directory+L"Istaroth-injector.log").c_str(),FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(file==INVALID_HANDLE_VALUE)return;
-    char line[500];int length=sprintf_s(line,"tick=%llu phase=%s event=%s pid=%lu birth=%llu error=%lu child_exit=0x%08lx load_started=%u handovers=%u\r\n",
-        (unsigned long long)GetTickCount64(),operation,event,game_pid,(unsigned long long)game_birth,error,child_exit,load_started?1u:0u,handover_count);
-    DWORD written=0;if(length>0)WriteFile(file,line,(DWORD)length,&written,nullptr);CloseHandle(file);
+    char line[512];sprintf_s(line,"phase=%s event=%s game_pid=%lu birth=%llu error=%lu child_exit=0x%08lx load_started=%u handovers=%u",
+        operation,event,game_pid,(unsigned long long)game_birth,error,child_exit,load_started?1u:0u,handover_count);
+    diagnostics::Append(directory,L"Istaroth-injector.log",line);
 }
 static void RequireAlive(HANDLE process) {
     DWORD state=WaitForSingleObject(process,0);
@@ -250,15 +250,25 @@ static void AwaitReady(HANDLE process) {
 }
 static void Receipt(DWORD error) {
     auto path=directory+L"Istaroth-injector-result.json";HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(file==INVALID_HANDLE_VALUE)return;char text[700];int count=sprintf_s(text,"{\"version\":1,\"pid\":%lu,\"birth\":%llu,\"error\":%lu,\"child_exit\":%lu,\"runtime_ack\":%s,\"injector_exits\":true,\"cancelled\":%s,\"load_started\":%s,\"phase\":\"%s\",\"handover_count\":%u,\"handover_pid\":%lu,\"handover_exit\":%lu}\n",game_pid,(unsigned long long)game_birth,error,child_exit,runtime_ready?"true":"false",error==ERROR_CANCELLED?"true":"false",load_started?"true":"false",operation,handover_count,handover_pid,handover_exit);
+    if(file==INVALID_HANDLE_VALUE)return;char text[900];int count=sprintf_s(text,"{\"version\":1,\"build_version\":\"%s\",\"source_revision\":\"%s\",\"source_dirty\":%s,\"pid\":%lu,\"birth\":%llu,\"error\":%lu,\"child_exit\":%lu,\"runtime_ack\":%s,\"injector_exits\":true,\"cancelled\":%s,\"load_started\":%s,\"phase\":\"%s\",\"handover_count\":%u,\"handover_pid\":%lu,\"handover_exit\":%lu}\n",ISTAROTH_BUILD_VERSION,ISTAROTH_SOURCE_REVISION,ISTAROTH_SOURCE_DIRTY?"true":"false",game_pid,(unsigned long long)game_birth,error,child_exit,runtime_ready?"true":"false",error==ERROR_CANCELLED?"true":"false",load_started?"true":"false",operation,handover_count,handover_pid,handover_exit);
     DWORD written=0;if(count>0)WriteFile(file,text,(DWORD)count,&written,nullptr);CloseHandle(file);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    int argc=0;auto args=CommandLineToArgvW(GetCommandLineW(),&argc);bool restart=false;DWORD error=0;
-    for(int i=1;i<argc;i++){if(!wcscmp(args[i],L"--restart"))restart=true;else if(!wcscmp(args[i],L"--quiet"))quiet=true;else error=ERROR_INVALID_PARAMETER;}LocalFree(args);
+    int argc=0;auto args=CommandLineToArgvW(GetCommandLineW(),&argc);bool restart=false,export_report=false;DWORD error=0;
+    if(!args)return (int)GetLastError();
+    for(int i=1;i<argc;i++){if(!wcscmp(args[i],L"--restart"))restart=true;else if(!wcscmp(args[i],L"--quiet"))quiet=true;else if(!wcscmp(args[i],L"--diagnostics"))export_report=true;else error=ERROR_INVALID_PARAMETER;}LocalFree(args);
     wchar_t own[32768];DWORD length=GetModuleFileNameW(nullptr,own,32768);if(!length||length>=32768)return ERROR_FILENAME_EXCED_RANGE;
     directory=own;directory.resize(directory.find_last_of(L"\\/")+1);
+    if(export_report) {
+        if(error||restart)return ERROR_INVALID_PARAMETER;
+        std::wstring report;error=diagnostics::ExportReport(directory,TargetSha256,report);
+        if(!quiet) {
+            std::wstring text=error?L"导出诊断报告失败，错误码："+std::to_wstring(error):L"诊断报告已保存：\n"+report+L"\n\n请补充报错时间和现象后发送此文件。";
+            MessageBoxW(nullptr,text.c_str(),L"伊斯塔露 · 诊断报告",MB_OK|(error?MB_ICONERROR:MB_ICONINFORMATION));
+        }
+        return (int)error;
+    }
     HBRUSH background=CreateSolidBrush(RGB(14,20,32));
     if(!quiet) {
         WNDCLASSW wc={};wc.hInstance=instance;wc.lpfnWndProc=Window;wc.lpszClassName=L"Istaroth.Injector";wc.hbrBackground=background;

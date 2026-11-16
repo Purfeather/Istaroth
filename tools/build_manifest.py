@@ -6,8 +6,9 @@ import sys
 
 root, out = map(Path, sys.argv[1:3])
 try:
-    commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL, text=True).strip()
-    dirty = bool(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True).strip())
+    git = ['git', '-c', f'safe.directory={root}', '-C', str(root)]
+    commit = subprocess.check_output([*git, 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL, text=True).strip()
+    dirty = bool(subprocess.check_output([*git, 'status', '--porcelain'], text=True).strip())
 except subprocess.CalledProcessError:
     commit = None
     dirty = None
@@ -16,6 +17,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 manifest = {'version': sys.argv[3], 'kind': 'clean-source-build', 'live_acceptance': False,
+    'configuration': sys.argv[4],
     'source_commit': commit, 'source_dirty': dirty, 'toolchain': json.loads((root / 'toolchain.json').read_text()),
     'compatibility': json.loads((root / 'profiles/compatibility.json').read_text()),
     'dependencies': {name: json.loads((root / 'third_party' / name / 'SOURCE.json').read_text())['commit'] for name in ['imgui', 'detours']},

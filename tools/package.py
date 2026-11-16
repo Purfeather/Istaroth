@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import zipfile
 
@@ -43,17 +44,17 @@ def main():
         payload['使用说明.txt'] = (ROOT/'README.md').read_bytes()
     else:
         manifest = json.loads((args.slim/'build.json').read_text(encoding='utf8'))
-        if manifest['version'] != '0.1.1-candidate':
+        if manifest.get('configuration') != 'slim' or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', manifest['version']):
             parser.error('Slim packaging requires a -Slim build manifest')
         tests = json.loads((args.slim/'test-results.json').read_text(encoding='utf8'))
         assert tests['passed'], 'Candidate offline tests did not pass'
         payload = {x: (args.slim/x).read_bytes() for x in BINARIES}
         assert {x: sha(payload[x]) for x in BINARIES} == manifest['binaries']
-        version, name, live = '0.1.1-candidate', 'Istaroth-v0.1.1-candidate-win64', False
+        version, name, live = manifest['version'], f"Istaroth-v{manifest['version']}-win64", False
     payload['LICENSES.txt'] = license_bundle()
     metadata = {'version': version, 'kind': 'accepted-binary-repackage' if live else 'clean-source-candidate',
         'live_acceptance': live, 'publication_ready': False,
-        'publication_blockers': ['Bot v5 third-party character/reference redistribution basis is not documented'],
+        'publication_blockers': ['Development build; live validation pending'] if not live else [],
         'files': {x: {'bytes': len(data), 'sha256': sha(data)} for x,data in sorted(payload.items())}}
     if live:
         payload['manifest.json'] = (json.dumps(metadata, ensure_ascii=False, indent=2)+'\n').encode('utf8')

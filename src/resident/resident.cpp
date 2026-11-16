@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdio>
 #include "resident_internal.h"
+#include "diagnostics.h"
 
 namespace istaroth {
 HMODULE ResidentModule=nullptr;
@@ -21,19 +22,16 @@ static ActionShared *action_map=nullptr;
 static ResidentControl control;
 
 static void Log(const char* message) {
-    std::wstring path=DataDirectory+L"Istaroth-runtime.log";
-    HANDLE file=CreateFileW(path.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(file==INVALID_HANDLE_VALUE)return;
-    SYSTEMTIME t;GetSystemTime(&t);char line[512];
-    int size=sprintf_s(line,"%04u-%02u-%02uT%02u:%02u:%02uZ pid=%lu %s\r\n",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,GetCurrentProcessId(),message);
-    DWORD written=0;if(size>0)WriteFile(file,line,(DWORD)size,&written,nullptr);CloseHandle(file);
+    diagnostics::Append(DataDirectory,L"Istaroth-runtime.log",message);
 }
 void TraceRuntime(const char* message) {Log(message);}
 void SetRuntimeError(DWORD error,const char* message) {
     InterlockedCompareExchange(&external_error,(LONG)(error?error:ERROR_GEN_FAILURE),0);
-    InterlockedExchange(&enabled,0);Log(message);
+    InterlockedExchange(&enabled,0);
+    char line[512];sprintf_s(line,"event=runtime_error error=%lu hex=0x%08lx reason=%s",error,error,message);Log(line);
 }
 void EmitCommand(UiCommand command,int value) {
+    char line[160];sprintf_s(line,"event=ui_command command=%u value=%d",(unsigned)command,value);Log(line);
     if(command==UiCommand::Emergency){InterlockedExchange(&enabled,0);return;}
     if(command==UiCommand::Multiplier) {
         if(value<1||value>4)return;
@@ -58,7 +56,7 @@ UiState GetUiState() {
         copy.advance_active=copy.choose_active=copy.skip_active=false;copy.phase=UiPhase::Fault;
         strcpy_s(copy.reason,u8"控制器响应超时，等待恢复确认");
     }
-    else if(MenuVisible&&RendererOwnsForeground()&&copy.enabled&&copy.phase!=UiPhase::Fault)
+    else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault)
         strcpy_s(copy.reason,u8"菜单已打开，功能暂挂；关闭后继续");
     return copy;
 }
@@ -103,10 +101,12 @@ static Desired GetDesired() {
 }
 static void SaveDesired(const Desired& d) {
     std::wstring path=DataDirectory+L"Istaroth.ini";wchar_t number[8];swprintf_s(number,L"%u",d.target);
-    WritePrivateProfileStringW(L"Settings",L"Multiplier",number,path.c_str());
-    WritePrivateProfileStringW(L"Settings",L"Advance",d.advance?L"1":L"0",path.c_str());
-    WritePrivateProfileStringW(L"Settings",L"ChooseFirst",d.choose?L"1":L"0",path.c_str());
-    WritePrivateProfileStringW(L"Settings",L"SkipCooldown",d.skip?L"1":L"0",path.c_str());
+    DWORD error=0;
+    if(!WritePrivateProfileStringW(L"Settings",L"Multiplier",number,path.c_str()))error=GetLastError();
+    if(!WritePrivateProfileStringW(L"Settings",L"Advance",d.advance?L"1":L"0",path.c_str())&&!error)error=GetLastError();
+    if(!WritePrivateProfileStringW(L"Settings",L"ChooseFirst",d.choose?L"1":L"0",path.c_str())&&!error)error=GetLastError();
+    if(!WritePrivateProfileStringW(L"Settings",L"SkipCooldown",d.skip?L"1":L"0",path.c_str())&&!error)error=GetLastError();
+    char line[160];sprintf_s(line,"event=config_saved error=%lu target=%u advance=%u choose=%u skip=%u",error,d.target,d.advance,d.choose,d.skip);Log(line);
 }
 static void Publish(const ControlResult& result,const ClockShared* c,const ActionShared* a,bool initialized) {
     auto& u=result.ui;
@@ -167,7 +167,7 @@ static DWORD WINAPI Run(void*) {
     HANDLE clock_handle=nullptr,action_handle=nullptr,story_handle=nullptr;
     BYTE* story_map=nullptr;bool peers_loaded=false,renderer_attempted=false,initialized=false;
     ClockShared last_clock{};ActionShared last_action{};bool have_clock_snapshot=false,have_action_snapshot=false;
-    uint64_t started=GetTickCount64(),window_check=0;LONG saved_revision=0;bool f10_down=false,insert_down=false;
+    uint64_t started=GetTickCount64(),window_check=0,last_diagnostic=0;LONG saved_revision=0;bool f10_down=false,insert_down=false;
     UiPhase previous=UiPhase::Starting;
     for(;;) {
         uint64_t now=GetTickCount64();bool down=(GetAsyncKeyState(VK_F10)&0x8000)!=0;
@@ -225,6 +225,12 @@ static DWORD WINAPI Run(void*) {
         }
         if(!initialized&&now-started>90000&&!control.fault){SetRuntimeError(ERROR_TIMEOUT,"initialization timed out");control.fault=ERROR_TIMEOUT;}
         Publish(result,clock_read?&c:nullptr,action_read?&a:nullptr,initialized&&!control.fault);
+        if(now-last_diagnostic>=5000||result.ui.phase!=previous) {
+            char line[768];sprintf_s(line,"event=state phase=%u initialized=%u enabled=%u foreground=%u menu=%lu dialogue=%u target=%u actual=%.3f known=%u clock_status=%lu clock_error=%ld action_status=%lu action_error=%lu gate=%lu renderer=%u advance=%u choose=%u skip=%u error=%lu",
+                (unsigned)result.ui.phase,initialized,desired.enabled,foreground,(DWORD)MenuVisible,result.ui.dialogue,desired.target,result.ui.actual,result.ui.actual_known,
+                clock_read?c.status:0,clock_read?c.error:0,action_read?a.status:0,action_read?a.error:0,action_read?a.gate_reason:0,rendered,desired.advance,desired.choose,desired.skip,result.error);
+            Log(line);last_diagnostic=now;
+        }
         if(result.ui.phase!=previous) {previous=result.ui.phase;Log(result.ui.reason);}
         LONG revision=persist_revision;if(revision!=saved_revision){SaveDesired(GetDesired());saved_revision=revision;}
         Sleep(25);
