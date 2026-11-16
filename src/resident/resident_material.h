@@ -42,16 +42,16 @@ class SceneBlur {
         if(vs)return;
         const char shader[]=R"(
 Texture2D image:register(t0);SamplerState filtering:register(s0);
-cbuffer Parameters:register(b0){float2 offset;float phase;float unused;};
+cbuffer Parameters:register(b0){float2 offset;float phase;float center;float4 taps[16];};
 struct Vertex {float4 position:SV_POSITION;float2 uv:TEXCOORD0;};
 Vertex vertex(uint id:SV_VertexID){Vertex v;v.uv=float2((id<<1)&2,id&2);v.position=float4(v.uv*float2(2,-2)+float2(-1,1),0,1);return v;}
 float3 encode(float3 c){c=max(c,0);return lerp(1.055*pow(c,1.0/2.4)-.055,c*12.92,step(c,.0031308));}
 float4 pixel(Vertex v):SV_TARGET {
     if(phase<.5){float3 c=image.Sample(filtering,v.uv+offset).rgb+image.Sample(filtering,v.uv-offset).rgb;
         c+=image.Sample(filtering,v.uv+float2(offset.x,-offset.y)).rgb+image.Sample(filtering,v.uv+float2(-offset.x,offset.y)).rgb;return float4(c*.25,1);}
-    float3 color=image.Sample(filtering,v.uv).rgb*.227027;
-    color+=(image.Sample(filtering,v.uv+offset*1.384615).rgb+image.Sample(filtering,v.uv-offset*1.384615).rgb)*.316216;
-    color+=(image.Sample(filtering,v.uv+offset*3.230769).rgb+image.Sample(filtering,v.uv-offset*3.230769).rgb)*.070270;
+    float3 color=image.Sample(filtering,v.uv).rgb*center;
+    [loop]for(int i=0;i<16;i++){if(taps[i].y<=0)break;float2 delta=offset*taps[i].x;
+        color+=(image.Sample(filtering,v.uv+delta).rgb+image.Sample(filtering,v.uv-delta).rgb)*taps[i].y;}
     return float4(phase>1.5?encode(color):color,1);
 })";
         Ptr<ID3DBlob> vertex,pixel,error;
@@ -59,7 +59,7 @@ float4 pixel(Vertex v):SV_TARGET {
         Check(D3DCompile(shader,sizeof(shader)-1,nullptr,nullptr,nullptr,"pixel","ps_4_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&pixel,&error));
         Check(device->CreateVertexShader(vertex->GetBufferPointer(),vertex->GetBufferSize(),nullptr,&vs));
         Check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
-        D3D11_BUFFER_DESC constant{};constant.ByteWidth=16;constant.BindFlags=D3D11_BIND_CONSTANT_BUFFER;Check(device->CreateBuffer(&constant,nullptr,&parameters));
+        D3D11_BUFFER_DESC constant{};constant.ByteWidth=16*17;constant.BindFlags=D3D11_BIND_CONSTANT_BUFFER;Check(device->CreateBuffer(&constant,nullptr,&parameters));
         D3D11_SAMPLER_DESC sampling{};sampling.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sampling.AddressU=sampling.AddressV=sampling.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sampling.MaxLOD=D3D11_FLOAT32_MAX;
         sampling.ComparisonFunc=D3D11_COMPARISON_ALWAYS;sampling.MaxAnisotropy=1;Check(device->CreateSamplerState(&sampling,&sampler));
         D3D11_RASTERIZER_DESC drawing{};drawing.FillMode=D3D11_FILL_SOLID;drawing.CullMode=D3D11_CULL_NONE;drawing.DepthClipEnable=TRUE;drawing.ScissorEnable=TRUE;
@@ -101,7 +101,7 @@ public:
             if(!description.Width||!description.Height||!std::isfinite(strength)||strength<=0||strength>8||
                area.left<0||area.top<0||area.right>(LONG)description.Width||area.bottom>(LONG)description.Height||area.left>=area.right||area.top>=area.bottom)return E_INVALIDARG;
             Prepare(device,description);
-            LONG margin=(LONG)ceilf(16*strength+20);
+            float sigma=1.7f*strength;int radius=std::min(32,(int)ceilf(3*sigma));LONG margin=radius*4+12;
             D3D11_RECT region{std::max(0L,area.left-margin),std::max(0L,area.top-margin),std::min((LONG)width,area.right+margin),std::min((LONG)height,area.bottom+margin)};
             context->OMSetRenderTargets(0,nullptr,nullptr);ID3D11ShaderResourceView* empty=nullptr;context->PSSetShaderResources(0,1,&empty);
             if(samples>1)context->ResolveSubresource(copy.Get(),0,input,0,description.Format==DXGI_FORMAT_R8G8B8A8_TYPELESS||description.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS?UiUnormFormat(description.Format):description.Format);
@@ -115,10 +115,17 @@ public:
             context->HSSetShader(nullptr,nullptr,0);context->DSSetShader(nullptr,nullptr,0);context->CSSetShader(nullptr,nullptr,0);
             auto constant=parameters.Get();auto filtering=sampler.Get();context->PSSetConstantBuffers(0,1,&constant);context->PSSetSamplers(0,1,&filtering);
             ID3D11ShaderResourceView* images[]={source.Get(),views[0].Get(),views[1].Get()};
-            float values[3][4]={{1.f/width,1.f/height,0,0},{strength/reduced.Width,0,1,0},{0,strength/reduced.Height,2,0}};
+            struct Constants {float x=0,y=0,phase=0,center=0,taps[16][4]{};} values;
+            static_assert(sizeof(Constants)==16*17,"blur constant packing");float total=1;
+            for(int i=1,n=0;i<=radius;i+=2,n++) {
+                float first=expf(-float(i*i)/(2*sigma*sigma)),second=i+1<=radius?expf(-float((i+1)*(i+1))/(2*sigma*sigma)):0;
+                values.taps[n][0]=(i*first+(i+1)*second)/(first+second);values.taps[n][1]=first+second;total+=2*(first+second);
+            }
+            values.center=1/total;for(auto& tap:values.taps)tap[1]/=total;
             for(unsigned i=0;i<3;i++) {
                 auto target=targets[i].Get();context->OMSetRenderTargets(1,&target,nullptr);context->PSSetShaderResources(0,1,&images[i]);
-                context->UpdateSubresource(constant,0,nullptr,values[i],0,0);context->Draw(3,0);context->PSSetShaderResources(0,1,&empty);
+                values.x=i==0?1.f/width:i==1?1.f/reduced.Width:0;values.y=i==0?1.f/height:i==2?1.f/reduced.Height:0;values.phase=(float)i;
+                context->UpdateSubresource(constant,0,nullptr,&values,0,0);context->Draw(3,0);context->PSSetShaderResources(0,1,&empty);
             }
             Check(device->GetDeviceRemovedReason());*output=result.Get();return S_OK;
         }catch(HRESULT error){failure=error;return error;}catch(...){failure=E_OUTOFMEMORY;return failure;}

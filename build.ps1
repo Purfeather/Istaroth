@@ -21,7 +21,10 @@ if (-not $VcTools) {
 }
 $VcTools = [IO.Path]::GetFullPath($VcTools).TrimEnd('\','/')
 if ((Split-Path $VcTools -Leaf) -ne $lock.msvc_tools_version) { throw "Expected MSVC $($lock.msvc_tools_version)." }
-if (-not $SdkRoot) { $SdkRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots').KitsRoot10 }
+if (-not $SdkRoot) {
+    if ($env:WindowsSdkDir) { $SdkRoot = $env:WindowsSdkDir }
+    else { $SdkRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots').KitsRoot10 }
+}
 $sdkVersion = $lock.windows_sdk_version
 $compiler = Join-Path $VcTools 'bin/Hostx64/x64/cl.exe'
 if (-not (Test-Path $compiler)) { throw 'Pinned MSVC compiler not found.' }

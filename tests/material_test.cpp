@@ -75,7 +75,8 @@ static void BlurChecks() {
     auto data=Fill(512,256,0,0,0);for(UINT y=0;y<256;y++)for(UINT x=0;x<512;x++){BYTE value=((x/4+y/4)&1)?224:32;size_t p=(y*512+x)*4;data[p]=data[p+1]=data[p+2]=value;}
     auto input=Texture(512,256,DXGI_FORMAT_R8G8B8A8_UNORM,&data);SceneBlur full,partial;ID3D11ShaderResourceView* output=nullptr;
     Hr(full.Draw(device.Get(),context.Get(),input.Get(),{0,0,512,256},1.5f,&output));auto all=Read(Resource(output).Get());
-    BYTE minimum=255,maximum=0;for(unsigned x=40;x<88;x++){BYTE value=all[(32*128+x)*4];minimum=std::min(minimum,value);maximum=std::max(maximum,value);}Check(maximum-minimum<48);
+    BYTE minimum=255,maximum=0;for(unsigned x=40;x<88;x++){BYTE value=all[(32*128+x)*4];minimum=std::min(minimum,value);maximum=std::max(maximum,value);}
+    if(maximum-minimum>=48)fprintf(stderr,"blur contrast min=%u max=%u samples=%u,%u,%u,%u\n",minimum,maximum,all[(32*128+60)*4],all[(32*128+61)*4],all[(32*128+62)*4],all[(32*128+63)*4]);Check(maximum-minimum<48);
     Hr(partial.Draw(device.Get(),context.Get(),input.Get(),{200,100,312,164},1.5f,&output));auto region=Read(Resource(output).Get());
     for(UINT y:{25u,32u,40u})for(UINT x:{50u,64u,77u})Check(abs((int)region[(y*128+x)*4]-all[(y*128+x)*4])<=2);
     Check(full.Draw(device.Get(),context.Get(),input.Get(),{0,0,512,256},0,nullptr)==E_POINTER);
