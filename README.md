@@ -2,6 +2,8 @@
 
 Windows x64 原神剧情辅助工具。当前正式登记版本：**v0.1.1**。
 
+`main` 保留正式版源码；[develop](https://github.com/Purfeather/Istaroth/tree/develop) 用于保存开发中的修改，可能尚未完成全部测试。使用已验收版本请前往 [Release](https://github.com/Purfeather/Istaroth/releases)；开发流程见 [开发分支说明](docs/DEVELOPMENT.md)。
+
 Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo／HoYoverse）及其关联公司不存在隶属、合作、授权或背书关系，并非《原神》官方产品。相关游戏名称、商标、角色及素材的权利归各自权利人所有。本项目许可证仅覆盖贡献者有权授权的内容，第三方内容遵循各自的许可与权利声明。
 
 ## 功能与限制
@@ -29,4 +31,4 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 
 源码采用 Apache-2.0（第三方与素材例外见各自声明）。Copyright 2026 Istaroth contributors。
 
-当前版本 v0.1.1 已由用户实机测试通过，确认首次启动、路径与配置保存、菜单唤起与鼠标恢复正常（见 [验收记录](docs/accepted-v0.1.1.json)）。已测试归档与各组件哈希保持不变。项目在私有仓库维护，[构建结果](https://github.com/Purfeather/Istaroth/actions)与[版本归档](https://github.com/Purfeather/Istaroth/releases)以对应页面为准。
+当前版本 v0.1.1 已由用户实机测试通过，确认首次启动、路径与配置保存、菜单唤起与鼠标恢复正常（见 [验收记录](docs/accepted-v0.1.1.json)）。已测试归档与各组件哈希保持不变。项目已公开，[构建结果](https://github.com/Purfeather/Istaroth/actions)与[版本归档](https://github.com/Purfeather/Istaroth/releases)以对应页面为准。
