@@ -28,7 +28,13 @@ pwsh -NoProfile -File ./build.ps1 -Slim -OutputDirectory ./out-slim
 python tools/package.py --slim ./out-slim
 ```
 
-每次推送都会触发现有 Windows CI。CI 通过表示自动构建和离线检查通过，实机测试结果需单独记录。
+`main` 推送和 PR 自动运行 Windows CI。`develop` 推送不自动构建；先在本地检查，准备验证开发包时手动触发：
+
+```powershell
+gh workflow run build.yml --ref develop
+```
+
+CI 通过表示自动构建和离线检查通过，实机测试结果需单独记录。
 
 ## 开发包与正式版本
 

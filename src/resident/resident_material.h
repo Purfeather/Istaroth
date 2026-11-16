@@ -106,8 +106,8 @@ public:
             context->OMSetRenderTargets(0,nullptr,nullptr);ID3D11ShaderResourceView* empty=nullptr;context->PSSetShaderResources(0,1,&empty);
             if(samples>1)context->ResolveSubresource(copy.Get(),0,input,0,description.Format==DXGI_FORMAT_R8G8B8A8_TYPELESS||description.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS?UiUnormFormat(description.Format):description.Format);
             else {D3D11_BOX box{(UINT)region.left,(UINT)region.top,0,(UINT)region.right,(UINT)region.bottom,1};context->CopySubresourceRegion(copy.Get(),0,box.left,box.top,0,input,0,&box);}
-            D3D11_TEXTURE2D_DESC small{};encoded->GetDesc(&small);
-            D3D11_VIEWPORT viewport{0,0,(float)small.Width,(float)small.Height,0,1};context->RSSetViewports(1,&viewport);
+            D3D11_TEXTURE2D_DESC reduced{};encoded->GetDesc(&reduced);
+            D3D11_VIEWPORT viewport{0,0,(float)reduced.Width,(float)reduced.Height,0,1};context->RSSetViewports(1,&viewport);
             D3D11_RECT scissor{region.left/4,region.top/4,(region.right+3)/4,(region.bottom+3)/4};context->RSSetScissorRects(1,&scissor);
             context->RSSetState(raster.Get());context->OMSetBlendState(nullptr,nullptr,UINT(-1));context->OMSetDepthStencilState(depth.Get(),0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -115,7 +115,7 @@ public:
             context->HSSetShader(nullptr,nullptr,0);context->DSSetShader(nullptr,nullptr,0);context->CSSetShader(nullptr,nullptr,0);
             auto constant=parameters.Get();auto filtering=sampler.Get();context->PSSetConstantBuffers(0,1,&constant);context->PSSetSamplers(0,1,&filtering);
             ID3D11ShaderResourceView* images[]={source.Get(),views[0].Get(),views[1].Get()};
-            float values[3][4]={{1.f/width,1.f/height,0,0},{strength/small.Width,0,1,0},{0,strength/small.Height,2,0}};
+            float values[3][4]={{1.f/width,1.f/height,0,0},{strength/reduced.Width,0,1,0},{0,strength/reduced.Height,2,0}};
             for(unsigned i=0;i<3;i++) {
                 auto target=targets[i].Get();context->OMSetRenderTargets(1,&target,nullptr);context->PSSetShaderResources(0,1,&images[i]);
                 context->UpdateSubresource(constant,0,nullptr,values[i],0,0);context->Draw(3,0);context->PSSetShaderResources(0,1,&empty);
