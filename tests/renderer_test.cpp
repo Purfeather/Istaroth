@@ -91,6 +91,7 @@ int main() {
     SendMessageW(GameWindow,WM_KEYDOWN,'A',0);Check(original_keys==1);
     SetMenuVisible(true);Pump();Check(MenuVisible&&cursor_count>=0&&simulated_foreground==GameWindow);Check(activation_calls==0);
     {
+        Render(chain.Get(),0); // ImGui's auto-height window needs its first layout frame.
         const float background[]={.1f,.2f,.3f,1.f};host_context->ClearRenderTargetView(view.Get(),background);
         Render(chain.Get(),0);Check(!renderer_error&&ImGui::GetDrawData()->TotalVtxCount>hud_vertices);
         D3D11_TEXTURE2D_DESC readback{};buffer->GetDesc(&readback);readback.Usage=D3D11_USAGE_STAGING;
