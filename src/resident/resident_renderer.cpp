@@ -192,13 +192,23 @@ static void Render(IDXGISwapChain* chain,UINT flags) {
         Input pending[256];unsigned count=0;
         AcquireSRWLockExclusive(&input_lock);count=input_count;memcpy(pending,inputs,count*sizeof(Input));input_count=0;ReleaseSRWLockExclusive(&input_lock);
         for(unsigned i=0;i<count;i++)ImGui_ImplWin32_WndProcHandler(owner.load(),pending[i].message,pending[i].w,pending[i].l);
-        ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();io.DisplaySize=ImVec2((float)dimensions.Width,(float)dimensions.Height);
+        ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();
+        if(io.DisplaySize.x<=0||io.DisplaySize.y<=0)return;
         io.DisplayFramebufferScale=ImVec2(1,1);ImGui::NewFrame();
         auto snapshot=GetUiState();snapshot.display_width=io.DisplaySize.x;snapshot.display_height=io.DisplaySize.y;
         snapshot.icon_texture=(uint64_t)(uintptr_t)icon.Get();snapshot.backdrop=0;
-        bool open=MenuVisible!=0;float scale=std::clamp(std::min(dimensions.Width/1920.f,dimensions.Height/1080.f),.65f,2.f);
+        bool open=MenuVisible!=0;float scale=std::clamp(std::min(io.DisplaySize.x/1920.f,io.DisplaySize.y/1080.f),.65f,2.f);
         DrawResidentUi(snapshot,open,scale,EmitCommand);if(open!=(MenuVisible!=0))SetMenuVisible(open);
-        ImGui::Render();auto view=target.Get();context->OMSetRenderTargets(1,&view,nullptr);ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        ImGui::Render();auto draw=ImGui::GetDrawData();
+        // Keep mouse/UI coordinates in client space. The pinned DX11 backend does
+        // not scale viewports, so adapt only its drawing data to the back buffer.
+        ImVec2 factor(dimensions.Width/io.DisplaySize.x,dimensions.Height/io.DisplaySize.y);
+        if(factor.x!=1.f||factor.y!=1.f) {
+            for(auto list:draw->CmdLists)for(auto& vertex:list->VtxBuffer){vertex.pos.x*=factor.x;vertex.pos.y*=factor.y;}
+            draw->ScaleClipRects(factor);draw->DisplayPos.x*=factor.x;draw->DisplayPos.y*=factor.y;
+            draw->DisplaySize=ImVec2((float)dimensions.Width,(float)dimensions.Height);
+        }
+        auto view=target.Get();context->OMSetRenderTargets(1,&view,nullptr);ImGui_ImplDX11_RenderDrawData(draw);
         RendererTick();
         if(MenuVisible&&!InterlockedCompareExchange(&cursor_pending,1,0)&&!PostMessageW(owner.load(),CursorMessage,0,0))InterlockedExchange(&cursor_pending,0);
     }catch(HRESULT error) {TraceCode("dxgi_frame_failed",error);ResetGraphics();SetRuntimeError((DWORD)error,"DXGI frame initialization or drawing failed");}

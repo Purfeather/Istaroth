@@ -82,6 +82,8 @@ int main() {
     ComPtr<ID3D11ComputeShader> compute;Check(SUCCEEDED(host_device->CreateComputeShader(shader_blob->GetBufferPointer(),shader_blob->GetBufferSize(),nullptr,&compute)));host_context->CSSetShader(compute.Get(),nullptr,0);
     D3D11_VIEWPORT viewport{3,4,100,110,0,1};host_context->RSSetViewports(1,&viewport);host_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
     Check(SUCCEEDED(chain->Present(0,0)));Check(RendererReady&&ticks==1&&!renderer_error);
+    RECT client{};Check(GetClientRect(GameWindow,&client)!=FALSE);Check(ImGui::GetIO().DisplaySize.x==client.right&&ImGui::GetIO().DisplaySize.y==client.bottom);
+    Check(ImGui::GetDrawData()->DisplaySize.x==1280&&ImGui::GetDrawData()->DisplaySize.y==800);
     int hud_vertices=ImGui::GetDrawData()->TotalVtxCount;Check(hud_vertices>0);
     ComPtr<ID3D11RenderTargetView> restored;host_context->OMGetRenderTargets(1,&restored,nullptr);Check(restored.Get()==view.Get());
     ComPtr<ID3D11ComputeShader> restored_compute;host_context->CSGetShader(&restored_compute,nullptr,nullptr);Check(restored_compute.Get()==compute.Get());
