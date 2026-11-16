@@ -10,4 +10,4 @@
 
 **问题反馈提示**：反馈时请注明工具版本、游戏版本指纹、显示模式及问题复现步骤；日志与截图建议事先遮蔽个人 UID 及路径账号信息。
 
-开发版可以运行 `Istaroth.exe --diagnostics` 导出单份文本报告，具体内容及边界见 [诊断说明](DIAGNOSTICS.md)。
+可单独下载“伊斯塔露报告工具.exe”，双击后选择 Istaroth 文件夹，点击“导出报告”，再点击“打开报告位置”发送 TXT。报告保存到桌面的 `Istaroth-reports`，不需要终端。开发版也保留 `Istaroth.exe --diagnostics`；具体内容见 [诊断说明](DIAGNOSTICS.md)。

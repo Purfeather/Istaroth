@@ -45,18 +45,20 @@ inline std::string ReadTail(const std::wstring& path) {
 }
 
 // A single UTF-8 report; fixed inputs only, with no process discovery or upload.
-inline DWORD ExportReport(const std::wstring& directory,const char* game_hash,std::wstring& output) noexcept {
+inline DWORD ExportReport(const std::wstring& directory,const char* game_hash,std::wstring& output,bool collector=false,const std::wstring& destination={}) noexcept {
     output.clear();
     try {
-        std::wstring reports=directory+L"reports";
+        std::wstring reports=destination.empty()?directory+L"reports":destination;
         if(!CreateDirectoryW(reports.c_str(),nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return GetLastError();
         SYSTEMTIME time{};GetSystemTime(&time);wchar_t name[150];
         static volatile LONG sequence=0;
         swprintf_s(name,L"\\Istaroth-report-%04u%02u%02u-%02u%02u%02u-%lu-%llu-%ld.txt",time.wYear,time.wMonth,time.wDay,
             time.wHour,time.wMinute,time.wSecond,GetCurrentProcessId(),(unsigned long long)GetTickCount64(),InterlockedIncrement(&sequence));
-        std::string report="Istaroth local diagnostic report\r\nversion=" ISTAROTH_BUILD_VERSION
-            "\r\nsource=" ISTAROTH_SOURCE_REVISION "\r\nsource_dirty="+std::to_string(ISTAROTH_SOURCE_DIRTY)+
-            "\r\nsupported_game_sha256="+game_hash+"\r\n";
+        std::string report="Istaroth local diagnostic report\r\n";
+        report+=collector?"collector_version=":"version=";report+=ISTAROTH_BUILD_VERSION;
+        report+=collector?"\r\ncollector_source=":"\r\nsource=";report+=ISTAROTH_SOURCE_REVISION;
+        report+="\r\nsource_dirty="+std::to_string(ISTAROTH_SOURCE_DIRTY)+"\r\nsupported_game_sha256="+game_hash+"\r\n";
+        if(collector)report+="collected_program_version=unknown; use original runtime/loader log identity\r\n";
         char timestamp[80];sprintf_s(timestamp,"captured_utc=%04u-%02u-%02uT%02u:%02u:%02uZ\r\n",time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond);report+=timestamp;
         OSVERSIONINFOW version{};version.dwOSVersionInfoSize=sizeof(version);
         auto query=(LONG(WINAPI*)(OSVERSIONINFOW*))GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"RtlGetVersion");

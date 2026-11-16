@@ -25,7 +25,7 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 
 配置与诊断日志保存在程序所在目录。提供排查信息前请注意遮蔽路径、UID 或个人账号信息。
 
-开发版可运行 `Istaroth.exe --diagnostics`，在程序目录的 `reports` 下导出一份本地诊断报告；此入口不启动游戏。详见 [诊断与开发版验证](docs/DIAGNOSTICS.md)。
+遇到问题可使用单独提供的“伊斯塔露报告工具.exe”：双击打开，选择 Istaroth 文件夹，点击“导出报告”即可，不需要终端。报告保存到桌面的 `Istaroth-reports`，不会自动上传。开发版原有的 `Istaroth.exe --diagnostics` 入口仍可使用。详见 [诊断与开发版验证](docs/DIAGNOSTICS.md)。
 
 ## 开发与发布状态
 

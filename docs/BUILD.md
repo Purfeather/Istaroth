@@ -40,3 +40,14 @@ pwsh -NoProfile -File ./build.ps1
 ./build.ps1 -Slim -OutputDirectory ./out-slim
 python tools/package.py --slim ./out-slim
 ```
+
+## 独立报告工具
+
+在 x64 开发者 PowerShell 中运行：
+
+```powershell
+./tools/build_report_tool.ps1
+# 也可按上方工具链版本明确传入 -VcTools 与 -SdkRoot。
+```
+
+输出为 `out/report-tool/伊斯塔露报告工具.exe`，静态链接运行库并内嵌项目 LICENSE 和 NOTICE；无需随附 DLL。脚本只构建报告工具，并运行图形窗口导出测试及原日志导出回归，不构建或启动游戏组件。测试程序和构建日志留在输出目录，不随 EXE 分发。报告工具独立版本为 0.1.0，与游戏组件版本分别记录。
