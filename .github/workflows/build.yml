@@ -43,4 +43,5 @@ jobs:
             out-slim/tests/**/*.exe
             out-slim/tests/**/*.dll
             out-slim/tests/owned-renderer.log
+            out-slim/tests/material-previews/*.png
       # CI does not install the game, inject into it, or publish releases.

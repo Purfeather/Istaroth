@@ -10,9 +10,9 @@ out = Path(sys.argv[1]).resolve()
 results = []
 
 
-def run(name, args=(), directory=None):
+def run(name, args=(), directory=None, seconds=25):
     result = subprocess.run([str(out / 'tests' / name), *args], cwd=directory or out / 'tests',
-                            capture_output=True, text=True, timeout=25, encoding='utf8', errors='replace')
+                            capture_output=True, text=True, timeout=seconds, encoding='utf8', errors='replace')
     if result.returncode:
         raise RuntimeError(f'{name} failed ({result.returncode}): {result.stdout}\n{result.stderr}')
     results.append({'test': name, 'args': list(args), 'passed': True, 'output': result.stdout.strip()})
@@ -106,6 +106,7 @@ try:
     run('cursor-test.exe')
     run('diagnostics-test.exe')
     run('renderer-test.exe')
+    run('material-test.exe', seconds=50)
     run('loader-test.exe')
     for mode in ['handover','dead-listed','loaded','crash','repeat','cancel','module-absent']:
         run('bootstrap/bootstrap-test.exe', [mode], out/'tests/bootstrap')

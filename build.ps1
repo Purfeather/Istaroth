@@ -103,6 +103,7 @@ try {
     CompileCpp 'tests/actions-test.exe' @('tests/actions_test.cpp')
     $uiObjects = @('resident_ui','imgui','imgui_draw','imgui_widgets','imgui_tables','imgui_impl_dx11') | ForEach-Object { "$out/$_.obj" }
     CompileCpp 'tests/renderer-test.exe' (@('tests/renderer_test.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
+    CompileCpp 'tests/material-test.exe' (@('tests/material_test.cpp') + $slimFlags + $uiObjects + $uiLibraries)
     CompileCpp 'tests/ui-snapshot.exe' (@('tests/ui_snapshot.cpp') + $slimFlags + $uiObjects + $uiLibraries)
     Run 'python' @('-B','tools/build_manifest.py',$root,$out,$version,($(if ($Slim) {'slim'} else {'standard'})))
     if (-not $SkipTests) { Run 'python' @('-B','tests/run.py',$out) }

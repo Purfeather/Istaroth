@@ -15,7 +15,7 @@ struct UiState {
     char reason[128]={};
     // A blurred current-frame DX11 SRV; zero means transparent-color fallback.
     uint64_t backdrop=0;
-    // Optional static RGBA icon on the renderer's private DX11 device.
+    // Optional static RGBA icon on the renderer's DX11 device.
     uint64_t icon_texture=0;
     float display_width=0,display_height=0;
 };

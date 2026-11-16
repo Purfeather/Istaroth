@@ -69,7 +69,7 @@ int main() {
     Check(RegisterClassW(&type)!=0);GameWindow=CreateWindowW(type.lpszClassName,L"Owned hidden renderer fixture",WS_OVERLAPPEDWINDOW,0,0,1280,800,nullptr,nullptr,ResidentModule,nullptr);
     Check(GameWindow!=nullptr);simulated_foreground=GameWindow;Check(Install(nullptr)==0);
     DXGI_SWAP_CHAIN_DESC description{};description.BufferDesc.Width=1280;description.BufferDesc.Height=800;
-    description.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;description.BufferCount=2;description.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    description.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;description.BufferCount=2;description.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;
     description.OutputWindow=GameWindow;description.SampleDesc.Count=1;description.Windowed=TRUE;description.SwapEffect=DXGI_SWAP_EFFECT_DISCARD;
     ComPtr<IDXGISwapChain> chain;ComPtr<ID3D11Device> host_device;ComPtr<ID3D11DeviceContext> host_context;
     auto create=[&]{Check(SUCCEEDED(D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&description,&chain,&host_device,nullptr,&host_context)));};
@@ -80,8 +80,18 @@ int main() {
     const char shader_source[]="[numthreads(1,1,1)] void main(uint3 id:SV_DispatchThreadID){}";
     ComPtr<ID3DBlob> shader_blob;Check(SUCCEEDED(D3DCompile(shader_source,sizeof(shader_source)-1,nullptr,nullptr,nullptr,"main","cs_5_0",0,0,&shader_blob,nullptr)));
     ComPtr<ID3D11ComputeShader> compute;Check(SUCCEEDED(host_device->CreateComputeShader(shader_blob->GetBufferPointer(),shader_blob->GetBufferSize(),nullptr,&compute)));host_context->CSSetShader(compute.Get(),nullptr,0);
+    D3D11_BUFFER_DESC constants_description{};constants_description.ByteWidth=16;constants_description.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+    ComPtr<ID3D11Buffer> game_constants;Check(SUCCEEDED(host_device->CreateBuffer(&constants_description,nullptr,&game_constants)));
+    auto constant=game_constants.Get();host_context->PSSetConstantBuffers(0,1,&constant);
+    D3D11_TEXTURE2D_DESC image_description{};image_description.Width=image_description.Height=4;image_description.MipLevels=image_description.ArraySize=image_description.SampleDesc.Count=1;
+    image_description.Format=DXGI_FORMAT_R8G8B8A8_UNORM;image_description.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+    ComPtr<ID3D11Texture2D> game_image;ComPtr<ID3D11ShaderResourceView> game_view;Check(SUCCEEDED(host_device->CreateTexture2D(&image_description,nullptr,&game_image)));Check(SUCCEEDED(host_device->CreateShaderResourceView(game_image.Get(),nullptr,&game_view)));
+    auto shader_view=game_view.Get();host_context->PSSetShaderResources(0,1,&shader_view);
     D3D11_VIEWPORT viewport{3,4,100,110,0,1};host_context->RSSetViewports(1,&viewport);host_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
     Check(SUCCEEDED(chain->Present(0,0)));Check(RendererReady&&ticks==1&&!renderer_error);
+    Check(BackdropReady!=0);D3D11_RENDER_TARGET_VIEW_DESC ui_target{};target->GetDesc(&ui_target);Check(ui_target.Format==DXGI_FORMAT_R8G8B8A8_UNORM);
+    ComPtr<ID3D11Buffer> restored_constants;host_context->PSGetConstantBuffers(0,1,&restored_constants);Check(restored_constants.Get()==game_constants.Get());
+    ComPtr<ID3D11ShaderResourceView> restored_image;host_context->PSGetShaderResources(0,1,&restored_image);Check(restored_image.Get()==game_view.Get());
     RECT client{};Check(GetClientRect(GameWindow,&client)!=FALSE);Check(ImGui::GetIO().DisplaySize.x==client.right&&ImGui::GetIO().DisplaySize.y==client.bottom);
     Check(ImGui::GetDrawData()->DisplaySize.x==1280&&ImGui::GetDrawData()->DisplaySize.y==800);
     int hud_vertices=ImGui::GetDrawData()->TotalVtxCount;Check(hud_vertices>0);
@@ -95,14 +105,16 @@ int main() {
     {
         Render(chain.Get(),0); // ImGui's auto-height window needs its first layout frame.
         const float background[]={.1f,.2f,.3f,1.f};host_context->ClearRenderTargetView(view.Get(),background);
-        Render(chain.Get(),0);Check(!renderer_error&&ImGui::GetDrawData()->TotalVtxCount>hud_vertices);
         D3D11_TEXTURE2D_DESC readback{};buffer->GetDesc(&readback);readback.Usage=D3D11_USAGE_STAGING;
         readback.BindFlags=readback.MiscFlags=0;readback.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
         ComPtr<ID3D11Texture2D> image;Check(SUCCEEDED(host_device->CreateTexture2D(&readback,nullptr,&image)));
         host_context->CopyResource(image.Get(),buffer.Get());D3D11_MAPPED_SUBRESOURCE mapped{};
         Check(SUCCEEDED(host_context->Map(image.Get(),0,D3D11_MAP_READ,0,&mapped)));
+        BYTE expected[4];memcpy(expected,(const BYTE*)mapped.pData+(readback.Height-1)*mapped.RowPitch,4);host_context->Unmap(image.Get(),0);
+        Render(chain.Get(),0);Check(!renderer_error&&ImGui::GetDrawData()->TotalVtxCount>hud_vertices);
+        host_context->CopyResource(image.Get(),buffer.Get());Check(SUCCEEDED(host_context->Map(image.Get(),0,D3D11_MAP_READ,0,&mapped)));
         auto corner=(const BYTE*)mapped.pData+(readback.Height-1)*mapped.RowPitch;
-        Check(abs((int)corner[0]-26)<=1&&abs((int)corner[1]-51)<=1&&abs((int)corner[2]-77)<=1&&corner[3]==255);
+        Check(memcmp(corner,expected,4)==0);
         host_context->Unmap(image.Get(),0);Check(SUCCEEDED(chain->Present(0,0)));
     }
     SendMessageW(GameWindow,WM_KEYDOWN,'B',0);Check(original_keys==1);

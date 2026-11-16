@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdio>
 #include <mutex>
+#include <memory>
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -17,6 +18,7 @@
 #include "resident_icon.h"
 #include "resident_embedded_icon.h"
 #include "resident_cursor.h"
+#include "resident_material.h"
 using Microsoft::WRL::ComPtr;
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 
@@ -41,6 +43,8 @@ static ComPtr<ID3D11Device> device;
 static ComPtr<ID3D11DeviceContext> context;
 static ComPtr<ID3D11RenderTargetView> target;
 static ComPtr<ID3D11ShaderResourceView> icon;
+static SceneBlur scene_blur;
+static bool blur_failure_logged=false;
 static bool platform=false,graphics=false;
 static int last_fullscreen=-1;static unsigned last_width=0,last_height=0;
 static thread_local bool in_present=false;
@@ -113,7 +117,7 @@ static void InstallInput(HWND window) {
     previous_window=previous;
 }
 static void ResetGraphics() {
-    active_chain=nullptr;target.Reset();icon.Reset();
+    active_chain=nullptr;target.Reset();icon.Reset();scene_blur.Reset();blur_failure_logged=false;InterlockedExchange(&BackdropReady,0);
     if(graphics)ImGui_ImplDX11_Shutdown();if(platform)ImGui_ImplWin32_Shutdown();
     graphics=platform=false;if(ImGui::GetCurrentContext())ImGui::DestroyContext();
     context.Reset();device.Reset();InterlockedExchange(&RendererReady,0);
@@ -155,19 +159,38 @@ struct Pipeline {
     ID3D11UnorderedAccessView* uav[64]{};UINT uav_count=8;
     ID3D11HullShader* hs=nullptr;ID3D11DomainShader* ds=nullptr;ID3D11ComputeShader* cs=nullptr;
     ID3D11ClassInstance *hi[256]{},*di[256]{},*ci[256]{};UINT hn=256,dn=256,cn=256;
+    ID3D11VertexShader* vs=nullptr;ID3D11PixelShader* ps=nullptr;ID3D11GeometryShader* gs=nullptr;
+    ID3D11ClassInstance *vi[256]{},*pi[256]{},*gi[256]{};UINT vn=256,pn=256,gn=256;
+    ID3D11ShaderResourceView* image=nullptr;ID3D11SamplerState* sampler=nullptr;ID3D11Buffer* constants=nullptr;
+    ID3D11BlendState* blend=nullptr;FLOAT blend_factor[4]{};UINT mask=0,reference=0;
+    ID3D11DepthStencilState* depth_state=nullptr;ID3D11RasterizerState* raster=nullptr;ID3D11InputLayout* layout=nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY topology{};D3D11_VIEWPORT viewports[16]{};UINT viewport_count=16;
+    D3D11_RECT scissors[16]{};UINT scissor_count=16;
     explicit Pipeline(ID3D11DeviceContext* value):c(value) {
         uav_count=device->GetFeatureLevel()>=D3D_FEATURE_LEVEL_11_1?64u:8u;
         c->OMGetRenderTargets(8,rt,&depth);c->OMGetRenderTargetsAndUnorderedAccessViews(0,nullptr,nullptr,0,uav_count,uav);
         c->HSGetShader(&hs,hi,&hn);c->DSGetShader(&ds,di,&dn);c->CSGetShader(&cs,ci,&cn);
+        c->VSGetShader(&vs,vi,&vn);c->PSGetShader(&ps,pi,&pn);c->GSGetShader(&gs,gi,&gn);
+        c->PSGetShaderResources(0,1,&image);c->PSGetSamplers(0,1,&sampler);c->PSGetConstantBuffers(0,1,&constants);
+        c->OMGetBlendState(&blend,blend_factor,&mask);c->OMGetDepthStencilState(&depth_state,&reference);
+        c->RSGetState(&raster);c->RSGetViewports(&viewport_count,viewports);c->RSGetScissorRects(&scissor_count,scissors);
+        c->IAGetInputLayout(&layout);c->IAGetPrimitiveTopology(&topology);
     }
     ~Pipeline() {
         UINT render_count=0;for(UINT i=0;i<8;i++)if(rt[i])render_count=i+1;
         UINT counts[64];for(auto& count:counts)count=UINT(-1);
         c->OMSetRenderTargetsAndUnorderedAccessViews(render_count,rt,depth,render_count,uav_count-render_count,uav+render_count,counts);
         c->HSSetShader(hs,hi,hn);c->DSSetShader(ds,di,dn);c->CSSetShader(cs,ci,cn);
+        c->VSSetShader(vs,vi,vn);c->PSSetShader(ps,pi,pn);c->GSSetShader(gs,gi,gn);
+        c->PSSetShaderResources(0,1,&image);c->PSSetSamplers(0,1,&sampler);c->PSSetConstantBuffers(0,1,&constants);
+        c->OMSetBlendState(blend,blend_factor,mask);c->OMSetDepthStencilState(depth_state,reference);
+        c->RSSetState(raster);c->RSSetViewports(viewport_count,viewports);c->RSSetScissorRects(scissor_count,scissors);
+        c->IASetInputLayout(layout);c->IASetPrimitiveTopology(topology);
         for(auto value:rt)if(value)value->Release();if(depth)depth->Release();if(hs)hs->Release();if(ds)ds->Release();if(cs)cs->Release();
         for(UINT i=0;i<uav_count;i++)if(uav[i])uav[i]->Release();
         for(UINT i=0;i<hn;i++)if(hi[i])hi[i]->Release();for(UINT i=0;i<dn;i++)if(di[i])di[i]->Release();for(UINT i=0;i<cn;i++)if(ci[i])ci[i]->Release();
+        if(vs)vs->Release();if(ps)ps->Release();if(gs)gs->Release();for(UINT i=0;i<vn;i++)if(vi[i])vi[i]->Release();for(UINT i=0;i<pn;i++)if(pi[i])pi[i]->Release();for(UINT i=0;i<gn;i++)if(gi[i])gi[i]->Release();
+        if(image)image->Release();if(sampler)sampler->Release();if(constants)constants->Release();if(blend)blend->Release();if(depth_state)depth_state->Release();if(raster)raster->Release();if(layout)layout->Release();
     }
 };
 static void Render(IDXGISwapChain* chain,UINT flags) {
@@ -185,19 +208,33 @@ static void Render(IDXGISwapChain* chain,UINT flags) {
             char line[160];sprintf_s(line,"event=dxgi_display exclusive=%d width=%u height=%u format=%u",exclusive,dimensions.Width,dimensions.Height,(unsigned)dimensions.Format);TraceRuntime(line);
             last_fullscreen=exclusive;last_width=dimensions.Width;last_height=dimensions.Height;
         }
-        if(!target)Check(device->CreateRenderTargetView(buffer.Get(),nullptr,&target));
+        if(!target) {
+            Check(CreateUiTarget(device.Get(),buffer.Get(),&target));D3D11_RENDER_TARGET_VIEW_DESC view{};target->GetDesc(&view);
+            char line[128];sprintf_s(line,"event=ui_color_target source_format=%u ui_format=%u",(unsigned)dimensions.Format,(unsigned)view.Format);TraceRuntime(line);
+        }
         if(!dimensions.Width||!dimensions.Height)return;
-        Pipeline pipeline(context.Get());
+        auto pipeline=std::make_unique<Pipeline>(context.Get());
         auto& io=ImGui::GetIO();if(InterlockedExchange(&clear_input,0))io.ClearInputKeys();
         Input pending[256];unsigned count=0;
         AcquireSRWLockExclusive(&input_lock);count=input_count;memcpy(pending,inputs,count*sizeof(Input));input_count=0;ReleaseSRWLockExclusive(&input_lock);
         for(unsigned i=0;i<count;i++)ImGui_ImplWin32_WndProcHandler(owner.load(),pending[i].message,pending[i].w,pending[i].l);
         ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();
         if(io.DisplaySize.x<=0||io.DisplaySize.y<=0)return;
-        io.DisplayFramebufferScale=ImVec2(1,1);ImGui::NewFrame();
-        auto snapshot=GetUiState();snapshot.display_width=io.DisplaySize.x;snapshot.display_height=io.DisplaySize.y;
-        snapshot.icon_texture=(uint64_t)(uintptr_t)icon.Get();snapshot.backdrop=0;
+        io.DisplayFramebufferScale=ImVec2(1,1);
         bool open=MenuVisible!=0;float scale=std::clamp(std::min(io.DisplaySize.x/1920.f,io.DisplaySize.y/1080.f),.65f,2.f);
+        D3D11_RECT area{0,0,(LONG)dimensions.Width,(LONG)dimensions.Height};
+        if(!open) {
+            LONG half=(LONG)ceilf(210*scale*dimensions.Width/io.DisplaySize.x);
+            area.left=std::max(0L,(LONG)dimensions.Width/2-half);area.right=std::min((LONG)dimensions.Width,(LONG)dimensions.Width/2+half);
+            area.bottom=std::min((LONG)dimensions.Height,(LONG)ceilf(100*scale*dimensions.Height/io.DisplaySize.y));
+        }
+        ID3D11ShaderResourceView* backdrop=nullptr;
+        HRESULT blurred=scene_blur.Draw(device.Get(),context.Get(),buffer.Get(),area,1.5f*scale,&backdrop);
+        InterlockedExchange(&BackdropReady,SUCCEEDED(blurred)&&backdrop?1:0);
+        if(FAILED(blurred)&&!blur_failure_logged){TraceCode("blur_unavailable; using translucent tint",blurred);blur_failure_logged=true;}
+        ImGui::NewFrame();
+        auto snapshot=GetUiState();snapshot.display_width=io.DisplaySize.x;snapshot.display_height=io.DisplaySize.y;
+        snapshot.icon_texture=(uint64_t)(uintptr_t)icon.Get();snapshot.backdrop=(uint64_t)(uintptr_t)backdrop;
         DrawResidentUi(snapshot,open,scale,EmitCommand);if(open!=(MenuVisible!=0))SetMenuVisible(open);
         ImGui::Render();auto draw=ImGui::GetDrawData();
         // Keep mouse/UI coordinates in client space. The pinned DX11 backend does
