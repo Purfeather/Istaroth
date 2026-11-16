@@ -9,9 +9,9 @@
 #include "diagnostics.h"
 static unsigned checks=0,ticks=0,original_keys=0,global_writes=0,activation_calls=0;
 static DWORD renderer_error=0;
-static HWND foreground=nullptr,captured=nullptr;
+static HWND simulated_foreground=nullptr,captured=nullptr;
 static RECT clip{10,20,30,40};static POINT cursor_position{15,25};static int cursor_count=-2;
-static HWND FakeForeground(){return foreground;}
+static HWND FakeForeground(){return simulated_foreground;}
 static BOOL FakeActivate(HWND){activation_calls++;return FALSE;}
 static BOOL FakeClip(const RECT* value){global_writes++;clip=value?*value:RECT{0,0,1920,1080};return TRUE;}
 static BOOL FakeGetClip(RECT* value){*value=clip;return TRUE;}
@@ -67,7 +67,7 @@ int main() {
     DataDirectory=executable;DataDirectory.resize(DataDirectory.find_last_of(L"\\/")+1);
     WNDCLASSW type{};type.lpfnWndProc=Host;type.hInstance=ResidentModule;type.lpszClassName=L"Istaroth.OwnedDxgiHost";
     Check(RegisterClassW(&type)!=0);GameWindow=CreateWindowW(type.lpszClassName,L"Owned hidden renderer fixture",WS_OVERLAPPEDWINDOW,0,0,1280,800,nullptr,nullptr,ResidentModule,nullptr);
-    Check(GameWindow!=nullptr);foreground=GameWindow;Check(Install(nullptr)==0);
+    Check(GameWindow!=nullptr);simulated_foreground=GameWindow;Check(Install(nullptr)==0);
     DXGI_SWAP_CHAIN_DESC description{};description.BufferDesc.Width=1280;description.BufferDesc.Height=800;
     description.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;description.BufferCount=2;description.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;
     description.OutputWindow=GameWindow;description.SampleDesc.Count=1;description.Windowed=TRUE;description.SwapEffect=DXGI_SWAP_EFFECT_DISCARD;
@@ -89,7 +89,7 @@ int main() {
     UINT viewport_count=1;D3D11_VIEWPORT restored_viewport{};host_context->RSGetViewports(&viewport_count,&restored_viewport);Check(restored_viewport.TopLeftX==3&&restored_viewport.Height==110);
     unsigned previous_ticks=ticks;Check(SUCCEEDED(chain->Present(0,DXGI_PRESENT_TEST)));Check(ticks==previous_ticks);
     SendMessageW(GameWindow,WM_KEYDOWN,'A',0);Check(original_keys==1);
-    SetMenuVisible(true);Pump();Check(MenuVisible&&cursor_count>=0&&foreground==GameWindow);Check(activation_calls==0);
+    SetMenuVisible(true);Pump();Check(MenuVisible&&cursor_count>=0&&simulated_foreground==GameWindow);Check(activation_calls==0);
     {
         const float background[]={.1f,.2f,.3f,1.f};host_context->ClearRenderTargetView(view.Get(),background);
         Render(chain.Get(),0);Check(!renderer_error&&ImGui::GetDrawData()->TotalVtxCount>hud_vertices);
@@ -104,9 +104,9 @@ int main() {
     }
     SendMessageW(GameWindow,WM_KEYDOWN,'B',0);Check(original_keys==1);
     SetMenuVisible(false);Pump();Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15);Check(input_count==0);
-    SetMenuVisible(true);Pump();Check(MenuVisible);foreground=(HWND)(ULONG_PTR)123;clip={100,100,200,200};cursor_position={150,150};
+    SetMenuVisible(true);Pump();Check(MenuVisible);simulated_foreground=(HWND)(ULONG_PTR)123;clip={100,100,200,200};cursor_position={150,150};
     unsigned writes=global_writes;SendMessageW(GameWindow,WM_KILLFOCUS,0,0);Check(!MenuVisible&&cursor_count==-2);Check(global_writes==writes&&clip.left==100&&cursor_position.x==150);
-    foreground=GameWindow;Check(SUCCEEDED(chain->Present(0,0)));Pump();
+    simulated_foreground=GameWindow;Check(SUCCEEDED(chain->Present(0,0)));Pump();
     host_context->OMSetRenderTargets(0,nullptr,nullptr);restored.Reset();view.Reset();buffer.Reset();
     Check(SUCCEEDED(chain->ResizeBuffers(2,1024,768,DXGI_FORMAT_UNKNOWN,0)));Check(SUCCEEDED(chain->Present(0,0)));Check(RendererReady&&!renderer_error);
     ObservePresent(chain.Get(),DXGI_ERROR_DEVICE_REMOVED);Check(!RendererReady);Pump();

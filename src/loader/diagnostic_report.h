@@ -31,7 +31,7 @@ inline std::string ReadTail(const std::wstring& path) {
     if(!GetFileSizeEx(file,&size)){DWORD error=GetLastError();CloseHandle(file);return "[size unavailable; error="+std::to_string(error)+"]\r\n";}
     DWORD length=(DWORD)(size.QuadPart>LogLimit?LogLimit:size.QuadPart);
     if(size.QuadPart>LogLimit) {
-        LARGE_INTEGER offset{};offset.QuadPart=-LogLimit;
+        LARGE_INTEGER offset{};offset.QuadPart=-(LONGLONG)LogLimit;
         if(!SetFilePointerEx(file,offset,nullptr,FILE_END)){CloseHandle(file);return "[seek failed]\r\n";}
     }
     std::string data(length,'\0');DWORD read=0;BOOL ok=ReadFile(file,data.data(),length,&read,nullptr);CloseHandle(file);

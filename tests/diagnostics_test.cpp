@@ -25,6 +25,8 @@ int main() {
     Check(DeleteFileW(name)!=FALSE);Check(CreateDirectoryW(name,nullptr)!=FALSE);std::wstring directory=std::wstring(name)+L"\\";
     SetLastError(789);Check(Append(directory,L"Istaroth-runtime.log","event=first"));Check(GetLastError()==789);
     auto data=ReadTail(directory+L"Istaroth-runtime.log");Check(data.find("event=first")!=std::string::npos);Check(data.find("version=" ISTAROTH_BUILD_VERSION)!=std::string::npos);Check(data.find("Z tick=")!=std::string::npos);
+    Write(directory+L"oversized.log",std::string(LogLimit+100,'x')+"\r\nTAIL_SENTINEL\r\n");
+    data=ReadTail(directory+L"oversized.log");Check(data.find("TAIL_SENTINEL")!=std::string::npos);Check(data.find("[older bytes omitted]")==0);Check(data.size()<LogLimit+100);
     Write(directory+L"Istaroth-runtime.log",std::string(LogLimit,'x'));
     Check(Append(directory,L"Istaroth-runtime.log","event=after_rotation"));
     WIN32_FILE_ATTRIBUTE_DATA attributes{};Check(GetFileAttributesExW((directory+L"Istaroth-runtime.log.1").c_str(),GetFileExInfoStandard,&attributes)!=FALSE);Check(attributes.nFileSizeLow==LogLimit);
