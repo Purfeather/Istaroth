@@ -1,7 +1,8 @@
 param(
     [string]$VcTools = $env:VCToolsInstallDir,
     [string]$SdkRoot = $env:WindowsSdkDir,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../out/report-tool')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../out/report-tool'),
+    [switch]$SkipTests
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -36,9 +37,11 @@ try {
     $libraries = @('user32.lib','gdi32.lib','shell32.lib','ole32.lib','uuid.lib')
     Run 'rc.exe' @('/nologo',('/fo' + "$out/report_tool.res"),'src/loader/report_tool.rc')
     Run $compiler ($flags + @('src/loader/report_tool.cpp',"$out/report_tool.res",('/Fe:' + "$out/伊斯塔露报告工具.exe")) + $libraries + @('/link','/INCREMENTAL:NO','/SUBSYSTEM:WINDOWS','/MANIFEST:EMBED',"/MANIFESTUAC:level='asInvoker' uiAccess='false'"))
-    Run $compiler ($flags + @('tests/report_tool_test.cpp',"$out/report_tool.res",('/Fe:' + "$out/report-tool-test.exe")) + $libraries + @('/link','/INCREMENTAL:NO'))
-    Run $compiler ($flags + @('tests/diagnostics_test.cpp',('/Fe:' + "$out/diagnostics-test.exe")))
-    Run "$out/report-tool-test.exe" @()
-    Run "$out/diagnostics-test.exe" @()
-    Write-Output "Built and tested standalone collector: $out/伊斯塔露报告工具.exe"
+    if (-not $SkipTests) {
+        Run $compiler ($flags + @('tests/report_tool_test.cpp',"$out/report_tool.res",('/Fe:' + "$out/report-tool-test.exe")) + $libraries + @('/link','/INCREMENTAL:NO'))
+        Run $compiler ($flags + @('tests/diagnostics_test.cpp',('/Fe:' + "$out/diagnostics-test.exe")))
+        Run "$out/report-tool-test.exe" @()
+        Run "$out/diagnostics-test.exe" @()
+    }
+    Write-Output "Built standalone collector: $out/伊斯塔露报告工具.exe"
 } finally { Pop-Location }

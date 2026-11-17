@@ -108,7 +108,11 @@ try {
     CompileCpp 'tests/renderer-test.exe' (@('tests/renderer_test.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
     CompileCpp 'tests/material-test.exe' (@('tests/material_test.cpp') + $slimFlags + $uiObjects + $uiLibraries)
     CompileCpp 'tests/ui-snapshot.exe' (@('tests/ui_snapshot.cpp') + $slimFlags + $uiObjects + $uiLibraries)
+    & (Join-Path $root 'tools/build_report_tool.ps1') -VcTools $VcTools -SdkRoot $SdkRoot -OutputDirectory "$out/report-tool" -SkipTests:$SkipTests
     Run 'python' @('-B','tools/build_manifest.py',$root,$out,$version,($(if ($Slim) {'slim'} else {'standard'})))
-    if (-not $SkipTests) { Run 'python' @('-B','tests/run.py',$out) }
+    if (-not $SkipTests) {
+        Run 'python' @('-B','tests/run.py',$out)
+        Run 'python' @('-B','tests/package_test.py')
+    }
     Write-Output "Built all five native binaries from source: $out"
 } finally { Pop-Location }

@@ -50,7 +50,10 @@ def main():
         assert tests['passed'], 'Candidate offline tests did not pass'
         payload = {x: (args.slim/x).read_bytes() for x in BINARIES}
         assert {x: sha(payload[x]) for x in BINARIES} == manifest['binaries']
+        usage = ROOT/'docs/USAGE.txt'
+        assert sha(usage.read_bytes()) == manifest['inputs']['docs/USAGE.txt'], 'Usage text changed after build'
         version, name, live = manifest['version'], f"Istaroth-v{manifest['version']}-win64", False
+        payload['使用说明.txt'] = b'\xef\xbb\xbf' + usage.read_text(encoding='utf8').replace('\n','\r\n').encode('utf8')
     payload['LICENSES.txt'] = license_bundle()
     metadata = {'version': version, 'kind': 'accepted-binary-repackage' if live else 'clean-source-candidate',
         'live_acceptance': live, 'publication_ready': False,
@@ -59,7 +62,7 @@ def main():
     if live:
         payload['manifest.json'] = (json.dumps(metadata, ensure_ascii=False, indent=2)+'\n').encode('utf8')
     else:
-        assert len(payload) == 6
+        assert set(payload) == set(BINARIES + ['LICENSES.txt','使用说明.txt'])
     args.destination.mkdir(parents=True, exist_ok=True)
     target = args.destination/(name+'.zip')
     if target.exists():
