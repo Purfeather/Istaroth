@@ -503,7 +503,21 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
         // ================= Card 1: Master Control =================
         {
             float card_w = modal_w - 36.0f * scale;
-            const float card_h = 72.0f * scale;
+            const char* title_text = (s.phase == UiPhase::Active)     ? u8"对话加速中" :
+                                     (s.phase == UiPhase::Paused)     ? u8"已暂停" :
+                                     (s.phase == UiPhase::Waiting)    ? u8"已启用 · 等待对话" :
+                                     (s.phase == UiPhase::Confirming) ? u8"正在校验状态" :
+                                     (s.phase == UiPhase::Restoring)  ? u8"正在恢复原速" :
+                                     (s.phase == UiPhase::Starting)   ? u8"正在初始化" :
+                                     (s.phase == UiPhase::Fault)      ? u8"组件异常 · 已停止" :
+                                                                        u8"状态待确认";
+            const char* hint_text = (s.reason[0] != 0) ? s.reason :
+                                    (s.phase == UiPhase::Active) ? u8"正在按设定倍率推进 · 按 F10 可随时急停" :
+                                    (s.phase == UiPhase::Paused) ? u8"当前保持 1× 原速，点击「启用」开始" :
+                                    u8"进入可操作对话后自动加速，平时保持原速";
+            const float text_width = card_w - 148.0f * scale;
+            float hint_height = ImGui::CalcTextSize(hint_text, nullptr, false, text_width).y;
+            const float card_h = ImMax(72.0f * scale, font_h + hint_height + 36.0f * scale);
             ImVec2 c_min = ImGui::GetCursorScreenPos();
             ImVec2 c_max(c_min.x + card_w, c_min.y + card_h);
             draw->AddRectFilled(c_min, c_max, kColCardBg, 12.0f * scale);
@@ -515,15 +529,6 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             float btn_y = c_min.y + (card_h - btn_h) * 0.5f;
             float text_max_x = btns_right - btn_w - 14.0f * scale;
 
-            // Phase Title (大白话极简文案)
-            const char* title_text = (s.phase == UiPhase::Active)     ? u8"剧情极速加速中" :
-                                     (s.phase == UiPhase::Paused)     ? u8"已暂停：手动待机" :
-                                     (s.phase == UiPhase::Waiting)    ? u8"等待常规对话就绪" :
-                                     (s.phase == UiPhase::Confirming) ? u8"对话状态重验中" :
-                                     (s.phase == UiPhase::Restoring)  ? u8"恢复基准原速中" :
-                                     (s.phase == UiPhase::Starting)   ? u8"系统初始化就绪" :
-                                     (s.phase == UiPhase::Fault)      ? u8"组件异常，已停止控制" :
-                                                                        u8"状态待确认";
             float line1_y = c_min.y + 14.0f * scale;
             ImVec2 dot_pos(c_min.x + 16.0f * scale, line1_y + font_h * 0.5f);
             draw->AddCircleFilled(dot_pos, 3.5f * scale, ps.accent, 12);
@@ -537,13 +542,8 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             ImVec4 clip_rect(c_min.x + 28.0f * scale, c_min.y, text_max_x, c_max.y);
             draw->AddText(nullptr, 0.0f, ImVec2(c_min.x + 28.0f * scale, line1_y), kColTextPrimary, title_text, nullptr, 0.0f, &clip_rect);
 
-            // Line 2: Reason text (极简大白话)
-            const char* hint_text = (s.reason[0] != 0) ? s.reason :
-                                    (s.phase == UiPhase::Active) ? u8"对话加速进行中 · 按 F10 停止并恢复原速" :
-                                    (s.phase == UiPhase::Paused) ? u8"点击启用开始加速 · 按 F10 仅用于停止" :
-                                    u8"离开对话保持原速，进入对话自动加速";
             float line2_y = line1_y + font_h + 8.0f * scale;
-            draw->AddText(nullptr, 0.0f, ImVec2(c_min.x + 28.0f * scale, line2_y), kColTextMuted, hint_text, nullptr, 0.0f, &clip_rect);
+            draw->AddText(nullptr, 0.0f, ImVec2(c_min.x + 28.0f * scale, line2_y), kColTextMuted, hint_text, nullptr, text_width, &clip_rect);
 
             // Merged Start / Stop button
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f * scale);
@@ -582,7 +582,7 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             draw->AddRect(c_min, c_max, kColBorderSubtle, 12.0f * scale, 0, 1.0f);
 
             float row_top_y = c_min.y + 13.0f * scale;
-            draw->AddText(ImVec2(c_min.x + 14.0f * scale, row_top_y), kColTextPrimary, u8"剧情推进倍率 (4 档步进)");
+            draw->AddText(ImVec2(c_min.x + 14.0f * scale, row_top_y), kColTextPrimary, u8"对话加速倍率");
 
             char actual_str[32];
             if (s.actual_known) {
@@ -668,7 +668,7 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             CapRow rows[3] = {
                 { u8"自动推进对话", u8"单句输出完成后自动进入下一句", "##SwAdv", s.advance, s.advance_active, UiCommand::Advance },
                 { u8"自动选择首项", u8"出现对话分支时自动选择第一个选项", "##SwFirst", s.choose_first, s.choose_active, UiCommand::ChooseFirst },
-                { u8"跳过对话冷却", u8"解除文本硬直，无冷却快速跳过", "##SwSkip", s.skip_cooldown, s.skip_active, UiCommand::SkipCooldown }
+                { u8"跳过对话冷却", u8"跳过对话切换冷却，连续推进不卡顿", "##SwSkip", s.skip_cooldown, s.skip_active, UiCommand::SkipCooldown }
             };
 
             const float sw_w = 34.0f * scale;
@@ -748,7 +748,7 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             push_text(u8"开关面板    按");
             fx += gap;
             fx += DrawKeycap(draw, ImVec2(fx, ky), "F10", scale, kColStopText, kColStopFill, kColStopBorder) + gap;
-            push_text(u8"仅停止并恢复原速");
+            push_text(u8"立即停止并恢复原速");
 
             ImGui::SetCursorScreenPos(ImVec2(p_min.x, f_max.y));
         }

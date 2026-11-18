@@ -57,7 +57,7 @@ UiState GetUiState() {
         strcpy_s(copy.reason,u8"控制器响应超时，等待恢复确认");
     }
     else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault)
-        strcpy_s(copy.reason,u8"菜单已打开，功能暂挂；关闭后继续");
+        strcpy_s(copy.reason,u8"面板开启期间暂不加速，关闭后自动继续");
     return copy;
 }
 void RendererTick() {InterlockedExchange64(&LastPresent,(LONG64)GetTickCount64());InterlockedExchange(&RendererReady,1);}

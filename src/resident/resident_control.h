@@ -80,15 +80,15 @@ public:
         u.skip_active=result.permit&&a->cooldown_active==1;
         u.effects_active=u.speed_active||(result.permit&&(d.advance||d.choose||d.skip));
         bool stopped=confirmed&&actions&&!a->cooldown_active&&a->status==1&&Acknowledged(a->ack,action_transition);
-        if(fault){u.phase=UiPhase::Fault;strcpy_s(u.reason,u8"组件异常，已停止请求；请正常重启并加载");}
-        else if(!initialized){u.phase=UiPhase::Starting;strcpy_s(u.reason,u8"正在初始化游戏内组件");}
-        else if(!d.enabled){u.phase=stopped?UiPhase::Paused:UiPhase::Restoring;strcpy_s(u.reason,stopped?(time?u8"已暂停，已确认恢复原速":u8"已暂停，游戏时钟处于暂停状态"):u8"正在停止操作并确认恢复原速");}
+        if(fault){u.phase=UiPhase::Fault;strcpy_s(u.reason,u8"组件发生异常，已自动停止；请重启游戏后重新加载");}
+        else if(!initialized){u.phase=UiPhase::Starting;strcpy_s(u.reason,u8"正在初始化组件，请稍候");}
+        else if(!d.enabled){u.phase=stopped?UiPhase::Paused:UiPhase::Restoring;strcpy_s(u.reason,stopped?(time?u8"当前保持 1× 原速，点击「启用」开始":u8"当前未启用，游戏时钟处于暂停状态"):u8"正在停止并恢复游戏原速");}
         else if(!gate) {
             u.phase=actions&&a->gate_reason==17?UiPhase::Confirming:UiPhase::Waiting;
             strcpy_s(u.reason,!foreground?u8"游戏处于后台，等待返回后重验":!rendered?u8"等待界面恢复":
-                !time?u8"等待游戏时钟恢复":!actions?u8"游戏更新暂停，等待重新确认":a->gate_reason==17?u8"正在确认对话":u8"等待可操作的常规对话");
-        } else if(!result.permit){u.phase=UiPhase::Confirming;strcpy_s(u.reason,u8"正在确认实际倍率");}
-        else {u.phase=UiPhase::Active;strcpy_s(u.reason,u8"常规对话控制中");}
+                !time?u8"等待游戏时钟恢复":!actions?u8"游戏更新暂停，等待重新确认":a->gate_reason==17?u8"正在确认对话与目标倍率":u8"进入可操作对话后自动加速，平时保持原速");
+        } else if(!result.permit){u.phase=UiPhase::Confirming;strcpy_s(u.reason,u8"正在确认对话与目标倍率");}
+        else {u.phase=UiPhase::Active;strcpy_s(u.reason,u8"正在按设定倍率推进 · 按 F10 可随时急停");}
         result.error=fault;return result;
     }
 };

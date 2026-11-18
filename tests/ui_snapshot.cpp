@@ -56,27 +56,27 @@ int wmain(int argc,wchar_t** argv) {
         istaroth::UiState state;state.initialized=state.actual_known=state.foreground=true;
         state.icon_texture=(uint64_t)(uintptr_t)icon.Get();
         state.display_width=(float)width;state.display_height=(float)height;state.phase=istaroth::UiPhase::Paused;
-        strcpy_s(state.reason,u8"已暂停，已确认恢复原速");
+        strcpy_s(state.reason,u8"当前保持 1× 原速，点击「启用」开始");
         std::wstring mode=argv[3];bool open=true;
         if(mode.rfind(L"hud-",0)==0){open=false;mode.erase(0,4);}
         if(mode==L"active"||mode==L"auto1") {
             state.phase=istaroth::UiPhase::Active;state.enabled=state.dialogue=state.effects_active=true;
             state.advance_active=state.skip_active=true;state.actual=mode==L"active"?4.f:1.f;
             state.target=mode==L"active"?4u:1u;state.speed_active=state.actual>1;
-            strcpy_s(state.reason,u8"常规对话控制中");
+            strcpy_s(state.reason,u8"正在按设定倍率推进 · 按 F10 可随时急停");
         } else if(mode==L"waiting"||mode==L"mixed") {
             state.phase=istaroth::UiPhase::Waiting;state.enabled=true;
             if(mode==L"mixed")state.choose_first=state.skip_cooldown=false;
-            strcpy_s(state.reason,u8"等待对话，离开对话保持原速");
+            strcpy_s(state.reason,u8"进入可操作对话后自动加速，平时保持原速");
         } else if(mode==L"confirming") {
             state.phase=istaroth::UiPhase::Confirming;state.enabled=true;state.dialogue=true;
-            strcpy_s(state.reason,u8"正在确认实际倍率");
+            strcpy_s(state.reason,u8"正在确认对话与目标倍率");
         } else if(mode==L"restoring") {
             state.phase=istaroth::UiPhase::Restoring;state.enabled=false;state.actual=2.5f;
-            strcpy_s(state.reason,u8"正在停止操作并确认恢复原速");
+            strcpy_s(state.reason,u8"正在停止并恢复游戏原速");
         } else if(mode==L"fault") {
             state.phase=istaroth::UiPhase::Fault;state.actual_known=false;
-            strcpy_s(state.reason,u8"组件异常，已停止请求；请正常重启并加载");
+            strcpy_s(state.reason,u8"组件发生异常，已自动停止；请重启游戏后重新加载");
         } else if(mode==L"disabled") {
             state.advance=state.choose_first=state.skip_cooldown=false;
         } else if(mode!=L"paused")return ERROR_INVALID_PARAMETER;
