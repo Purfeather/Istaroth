@@ -162,6 +162,8 @@ static void Initialize(IDXGISwapChain* chain,HWND window) {
 }
 // ImGui restores its own states; save the MRT and HS/DS/CS states it omits.
 struct Pipeline {
+    ComPtr<ID3D11Predicate> predicate;
+    BOOL predicate_value=FALSE;
     ID3D11DeviceContext* c;ID3D11RenderTargetView* rt[8]{};ID3D11DepthStencilView* depth=nullptr;
     ID3D11UnorderedAccessView* uav[64]{};UINT uav_count=8;
     ID3D11HullShader* hs=nullptr;ID3D11DomainShader* ds=nullptr;ID3D11ComputeShader* cs=nullptr;
@@ -174,6 +176,8 @@ struct Pipeline {
     D3D11_PRIMITIVE_TOPOLOGY topology{};D3D11_VIEWPORT viewports[16]{};UINT viewport_count=16;
     D3D11_RECT scissors[16]{};UINT scissor_count=16;
     explicit Pipeline(ID3D11DeviceContext* value):c(value) {
+        c->GetPredication(predicate.GetAddressOf(),&predicate_value);
+        if(predicate)c->SetPredication(nullptr,FALSE);
         uav_count=device->GetFeatureLevel()>=D3D_FEATURE_LEVEL_11_1?64u:8u;
         c->OMGetRenderTargets(8,rt,&depth);c->OMGetRenderTargetsAndUnorderedAccessViews(0,nullptr,nullptr,0,uav_count,uav);
         c->HSGetShader(&hs,hi,&hn);c->DSGetShader(&ds,di,&dn);c->CSGetShader(&cs,ci,&cn);
@@ -184,6 +188,7 @@ struct Pipeline {
         c->IAGetInputLayout(&layout);c->IAGetPrimitiveTopology(&topology);
     }
     ~Pipeline() {
+        if(predicate)c->SetPredication(predicate.Get(),predicate_value);
         UINT render_count=0;for(UINT i=0;i<8;i++)if(rt[i])render_count=i+1;
         UINT counts[64];for(auto& count:counts)count=UINT(-1);
         c->OMSetRenderTargetsAndUnorderedAccessViews(render_count,rt,depth,render_count,uav_count-render_count,uav+render_count,counts);
