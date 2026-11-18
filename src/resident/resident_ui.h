@@ -7,6 +7,7 @@ enum class UiPhase { Starting, Paused, Waiting, Confirming, Active, Restoring, F
 struct UiState {
     UiPhase phase=UiPhase::Starting;
     bool initialized=false,enabled=false,foreground=false,dialogue=false;
+    bool dialogue_ready=false;
     bool actual_known=false,speed_active=false,effects_active=false;
     bool advance=true,choose_first=true,skip_cooldown=true;
     bool advance_active=false,choose_active=false,skip_active=false;

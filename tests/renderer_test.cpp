@@ -98,6 +98,27 @@ static void MenuFadeProbe() {
     for(auto& command:menu->DrawList->CmdBuffer){has_backdrop|=command.GetTexID()==2;has_icon|=command.GetTexID()==3;}
     Check(faded&&has_backdrop&&has_icon);
     menu=frame(false,0);Check(!menu->Active&&ImGui::GetDrawData()->TotalVtxCount>0);
+    auto hud_frame=[&](){frame(false,0);return ImGui::FindWindowByName("##IstarothHudCapsule");};
+    auto colored=[](ImGuiWindow* hud,ImU32 rgb,bool speed_only=false) {
+        unsigned count=0;
+        for(auto& vertex:hud->DrawList->VtxBuffer) {
+            bool in_speed=vertex.pos.x>=hud->Pos.x+35&&vertex.pos.x<hud->Pos.x+55;
+            if((!speed_only||in_speed)&&(vertex.col&~IM_COL32_A_MASK)==(rgb&~IM_COL32_A_MASK))count++;
+        }
+        return count;
+    };
+    const ImU32 blue=IM_COL32(80,170,255,255),red=IM_COL32(248,81,73,255);
+    Check(colored(hud_frame(),blue)==0);
+    state.enabled=true;state.phase=UiPhase::Waiting;
+    auto hud=hud_frame();unsigned waiting_blue=colored(hud,blue);Check(waiting_blue>0&&colored(hud,blue,true)==0);
+    state.phase=UiPhase::Active;state.actual=4;state.speed_active=true;
+    hud=hud_frame();Check(colored(hud,blue)>waiting_blue&&colored(hud,blue,true)>0);
+    ImVector<ImDrawVert> steady=hud->DrawList->VtxBuffer;
+    for(unsigned i=0;i<60;i++)hud=hud_frame();
+    Check(hud->DrawList->VtxBuffer.Size==steady.Size&&memcmp(hud->DrawList->VtxBuffer.Data,steady.Data,steady.Size*sizeof(ImDrawVert))==0);
+    state.actual=1;state.speed_active=false;hud=hud_frame();Check(colored(hud,blue)>waiting_blue&&colored(hud,blue,true)==0);
+    state.phase=UiPhase::Fault;hud=hud_frame();Check(colored(hud,blue)==0&&colored(hud,red)>0);
+    state.phase=UiPhase::Active;state.enabled=false;Check(colored(hud_frame(),blue)==0);
     ImGui::DestroyContext();
 }
 int main() {

@@ -36,6 +36,15 @@ int main() {
         CHECK(stopped().ui.phase==UiPhase::Paused);a.ack=2;
     }
     d.enabled=true;CHECK(run().clock_enabled&&!run().permit);
+    {
+        auto panel=run(1000,false);
+        CHECK(panel.ui.dialogue_ready&&!panel.permit&&!panel.clock_enabled&&panel.ui.phase==UiPhase::Waiting);
+        a.gate_valid=0;CHECK(!run(1000,false).ui.dialogue_ready);a.gate_valid=1;
+        a.foreground=0;CHECK(!run(1000,false).ui.dialogue_ready);a.foreground=1;
+        CHECK(!run(1000,false,false).ui.dialogue_ready&&!run(1000,false,true,false).ui.dialogue_ready);
+        CHECK(!run(1300,false).ui.dialogue_ready);
+        c.scale=0;CHECK(!run(1000,false).ui.dialogue_ready);c.scale=1;
+    }
     controller.ClockSent(true,4,4);CHECK(!run().permit);
     c.ack=4;c.status=2;c.lease_active=1;c.baseline=1;c.scale=4;
     CHECK(run().permit&&run().ui.speed_active&&run().ui.actual==4);
@@ -49,7 +58,7 @@ int main() {
     d.enabled=false;CHECK(run().ui.phase==UiPhase::Paused&&run().ui.target==4&&!run().ui.effects_active);
     d.enabled=true;d.target=1;CHECK(run().permit&&!run().clock_enabled&&run().ui.effects_active);
     a.heartbeat=1300;CHECK(!run(1000).permit);a.heartbeat=1000;
-    a.version=3;CHECK(run().error==ERROR_REVISION_MISMATCH&&!run().permit);a.version=4;
+    a.version=3;CHECK(run().error==ERROR_REVISION_MISMATCH&&!run().permit&&!run().ui.dialogue_ready);a.version=4;
     controller.fault=0;d.target=5;CHECK(run().error==ERROR_INVALID_PARAMETER);d.target=4;
     controller.fault=0;c.scale=0;CHECK(!run().error&&!run().permit&&!run().clock_enabled&&!run().ui.actual_known);
     d.enabled=false;CHECK(run().ui.phase==UiPhase::Paused&&!run().ui.actual_known);d.enabled=true;

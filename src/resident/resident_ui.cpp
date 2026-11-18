@@ -66,10 +66,6 @@ static float AnimateFloat(ImGuiID id, float target, float speed) {
     return cur;
 }
 
-static float PulseWave() {
-    return 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 3.0f);
-}
-
 struct PhaseStyle {
     ImU32 accent;
     ImU32 text;
@@ -79,34 +75,23 @@ struct PhaseStyle {
     ImU32 tag_fg;
     ImU32 tag_border;
     bool has_halo;
-    bool pulse;
 };
 
 static PhaseStyle GetPhaseStyle(const UiState& s) {
-    switch (s.phase) {
-        case UiPhase::Active:
-            return { kColBlueAccent, kColBlueAccent, kColBorderActive, WithAlpha(kColBlueAccent, 96),
-                     kColBlueDim, kColBlueAccent, kColBorderActive, true, true };
-        case UiPhase::Waiting:
-            return { kColBlueAccent, kColBlueAccent, kColBorderActive, WithAlpha(kColBlueAccent, 96),
-                     kColBlueDim, kColBlueAccent, kColBorderActive, true, false };
-        case UiPhase::Fault:
-            return { kColFaultAccent, kColStopText, WithAlpha(kColFaultAccent, 150), WithAlpha(kColFaultAccent, 108),
-                     IM_COL32(255, 255, 255, 8), kColTextDim, 0, true, false };
-        case UiPhase::Confirming:
-        case UiPhase::Restoring:
-        case UiPhase::Starting:
-        case UiPhase::Paused:
-        default:
-            return { s.enabled ? kColBlueAccent : kColTextDim,
-                     s.enabled ? kColBlueAccent : kColTextPrimary,
-                     s.enabled ? kColBorderActive : IM_COL32(255, 255, 255, 38),
-                     kColBorderSubtle,
-                     s.enabled ? kColBlueDim : IM_COL32(255, 255, 255, 8),
-                     s.enabled ? kColBlueAccent : kColTextDim,
-                     s.enabled ? kColBorderActive : 0,
-                     false, false };
+    if (s.phase == UiPhase::Fault) {
+        return { kColFaultAccent, kColFaultAccent, WithAlpha(kColFaultAccent, 150), WithAlpha(kColFaultAccent, 108),
+                 IM_COL32(255, 255, 255, 8), kColTextDim, 0, true };
     }
+    if (s.enabled && s.phase == UiPhase::Active) {
+        return { kColBlueAccent, kColBlueAccent, kColBorderActive, WithAlpha(kColBlueAccent, 96),
+                 kColBlueDim, kColBlueAccent, kColBorderActive, true };
+    }
+    if (s.enabled && s.phase != UiPhase::Paused) {
+        return { kColBlueAccent, kColTextPrimary, IM_COL32(255, 255, 255, 38), WithAlpha(kColBlueAccent, 96),
+                 IM_COL32(255, 255, 255, 18), kColTextPrimary, IM_COL32(255, 255, 255, 38), false };
+    }
+    return { kColTextDim, kColTextDim, IM_COL32(255, 255, 255, 18), kColBorderSubtle,
+             IM_COL32(255, 255, 255, 8), kColTextDim, 0, false };
 }
 
 static ImVec4 TextInkBounds(const char* text) {
@@ -307,12 +292,11 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
     const float display_w = (s.display_width > 0.0f) ? s.display_width : ImGui::GetIO().DisplaySize.x;
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
     const PhaseStyle ps = GetPhaseStyle(s);
-    const bool hud_lit = (s.phase == UiPhase::Active || s.phase == UiPhase::Waiting || (s.enabled && s.phase != UiPhase::Fault));
     const bool show_live_tags = s.enabled && s.phase != UiPhase::Paused && s.phase != UiPhase::Fault;
     struct HudFunc { const char* name; bool configured; };
     HudFunc funcs[3]={{u8"推进",s.advance},{u8"首选",s.choose_first},{u8"冷却",s.skip_cooldown}};
     char speed_buf[16];
-    if(s.actual_known)std::snprintf(speed_buf,sizeof(speed_buf),u8"%.1f×",s.actual);
+    if(s.phase!=UiPhase::Fault&&s.actual_known)std::snprintf(speed_buf,sizeof(speed_buf),u8"%.1f×",s.actual);
     else std::snprintf(speed_buf,sizeof(speed_buf),u8"—");
     ImFont* font=ImGui::GetFont();float font_size=16.0f*scale;
     auto measure=[&](const char* text) {
@@ -356,12 +340,8 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
         bool hud_hovered = ImGui::IsWindowHovered();
         float hud_ht = AnimateFloat(ImGui::GetID("##HudHoverAnim"), hud_hovered ? 1.0f : 0.0f, 16.0f);
         DrawBackdropUnderlay(draw, s.backdrop, display_w, display_h, p_min, p_max, rounding, kColGlassHud);
-        if (hud_lit || s.phase == UiPhase::Fault) {
-            ImU32 bd_col = LerpColor(ps.hud_border, WithAlpha(ps.accent, 215), hud_ht * 0.5f);
-            draw->AddRect(p_min, p_max, bd_col, rounding, 0, 1.2f);
-        } else if (hud_ht > 0.01f) {
-            draw->AddRect(p_min, p_max, WithAlpha(IM_COL32(255, 255, 255, 68), (int)std::round(68.0f * hud_ht)), rounding, 0, 1.0f);
-        }
+        ImU32 bd_col = LerpColor(ps.hud_border, WithAlpha(ps.text, 150), hud_ht * 0.5f);
+        draw->AddRect(p_min, p_max, bd_col, rounding, 0, 1.2f);
 
         if (hud_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             menu_open = !menu_open;
@@ -369,24 +349,18 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
 
         // 1. Left Icon: Mini Compass
         ImVec2 compass_center(p_min.x + 20.0f * scale, p_min.y + hud_h * 0.5f);
-        ImU32 icon_col = (hud_lit || s.phase == UiPhase::Fault) ? ps.accent : kColTextMuted;
-        DrawStaticIcon(draw, s.icon_texture, compass_center, 26.0f * scale, icon_col);
+        DrawStaticIcon(draw, s.icon_texture, compass_center, 26.0f * scale, ps.text);
 
         // 2. Speed readout
         ImVec2 text_pos(p_min.x+35.0f*scale,p_min.y);
-        ImU32 text_col = (s.phase == UiPhase::Fault) ? kColStopText :
-                         hud_lit                     ? kColBlueAccent : kColTextPrimary;
+        ImU32 text_col = (s.phase == UiPhase::Fault) ? kColFaultAccent :
+                         (s.enabled && s.phase == UiPhase::Active && s.speed_active && s.actual_known) ? kColBlueAccent : kColTextPrimary;
         DrawBoxedText(draw,text_pos,ImVec2(text_pos.x+speed_slot,p_max.y),text_col,speed_buf);
 
         // Live status dot
         ImVec2 dot_pos(p_min.x+dot_offset,p_min.y+hud_h*0.5f);
+        if (ps.has_halo) draw->AddCircleFilled(dot_pos, 5.0f * scale, WithAlpha(ps.accent, 80), 12);
         draw->AddCircleFilled(dot_pos, 3.0f * scale, ps.accent, 12);
-        if (ps.has_halo || (s.enabled && s.phase != UiPhase::Fault)) {
-            float wave = ps.pulse ? PulseWave() : 0.5f;
-            int halo_a = (int)std::round(96.0f * (0.76f + 0.24f * wave));
-            float halo_r = (5.0f + (ps.pulse ? 0.9f * wave : 0.0f)) * scale;
-            draw->AddCircleFilled(dot_pos, halo_r, WithAlpha(ps.accent, halo_a), 12);
-        }
 
         // Separator 1
         float sep1_x = dot_pos.x + 12.0f * scale;
@@ -431,7 +405,9 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
 // -----------------------------------------------------------------------------
 // In-Game Menu Modal Window
 // -----------------------------------------------------------------------------
-static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit emit, float opacity) {
+static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale, UiEmit emit, float opacity) {
+    UiState s = snapshot;
+    if (s.phase == UiPhase::Active) s.phase = UiPhase::Waiting;
     const float display_w = (s.display_width > 0.0f) ? s.display_width : ImGui::GetIO().DisplaySize.x;
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
     const PhaseStyle ps = GetPhaseStyle(s);
@@ -503,18 +479,16 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
         // ================= Card 1: Master Control =================
         {
             float card_w = modal_w - 36.0f * scale;
-            const char* title_text = (s.phase == UiPhase::Active)     ? u8"对话加速中" :
-                                     (s.phase == UiPhase::Paused)     ? u8"已暂停" :
-                                     (s.phase == UiPhase::Waiting)    ? u8"已启用 · 等待对话" :
+            const char* title_text = (s.phase == UiPhase::Paused)     ? u8"已暂停" :
+                                     (s.phase == UiPhase::Waiting)    ? (s.dialogue_ready ? u8"已启用 · 面板暂挂中" : u8"已启用 · 监听对话中") :
                                      (s.phase == UiPhase::Confirming) ? u8"正在校验状态" :
                                      (s.phase == UiPhase::Restoring)  ? u8"正在恢复原速" :
                                      (s.phase == UiPhase::Starting)   ? u8"正在初始化" :
                                      (s.phase == UiPhase::Fault)      ? u8"组件异常 · 已停止" :
                                                                         u8"状态待确认";
             const char* hint_text = (s.reason[0] != 0) ? s.reason :
-                                    (s.phase == UiPhase::Active) ? u8"正在按设定倍率推进 · 按 F10 可随时急停" :
                                     (s.phase == UiPhase::Paused) ? u8"当前保持 1× 原速，点击「启用」开始" :
-                                    u8"进入可操作对话后自动加速，平时保持原速";
+                                    u8"当前保持原速；关闭面板后进入对话自动加速";
             const float text_width = card_w - 148.0f * scale;
             float hint_height = ImGui::CalcTextSize(hint_text, nullptr, false, text_width).y;
             const float card_h = ImMax(72.0f * scale, font_h + hint_height + 36.0f * scale);
@@ -532,12 +506,8 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             float line1_y = c_min.y + 14.0f * scale;
             ImVec2 dot_pos(c_min.x + 16.0f * scale, line1_y + font_h * 0.5f);
             draw->AddCircleFilled(dot_pos, 3.5f * scale, ps.accent, 12);
-            if (ps.has_halo) {
-                float wave = ps.pulse ? PulseWave() : 0.5f;
-                int halo_a = (int)std::round(96.0f * (0.76f + 0.24f * wave));
-                float halo_r = (6.0f + (ps.pulse ? 1.0f * wave : 0.0f)) * scale;
-                draw->AddCircleFilled(dot_pos, halo_r, WithAlpha(ps.accent, halo_a), 12);
-            }
+            if ((s.enabled && s.phase == UiPhase::Waiting) || s.phase == UiPhase::Fault)
+                draw->AddCircleFilled(dot_pos, 6.0f * scale, WithAlpha(ps.accent, 80), 12);
 
             ImVec4 clip_rect(c_min.x + 28.0f * scale, c_min.y, text_max_x, c_max.y);
             draw->AddText(nullptr, 0.0f, ImVec2(c_min.x + 28.0f * scale, line1_y), kColTextPrimary, title_text, nullptr, 0.0f, &clip_rect);
@@ -584,30 +554,25 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             float row_top_y = c_min.y + 13.0f * scale;
             draw->AddText(ImVec2(c_min.x + 14.0f * scale, row_top_y), kColTextPrimary, u8"对话加速倍率");
 
-            char actual_str[32];
-            if (s.actual_known) {
-                std::snprintf(actual_str, sizeof(actual_str), u8"实测：%.2f×", s.actual);
-            } else {
-                std::snprintf(actual_str, sizeof(actual_str), u8"实测：—");
-            }
+            char rule_str[64];
+            if (!s.enabled) std::snprintf(rule_str, sizeof(rule_str), u8"当前：1× 原速");
+            else if (s.target == 1) std::snprintf(rule_str, sizeof(rule_str), u8"原速执行 · 面板暂挂");
+            else std::snprintf(rule_str, sizeof(rule_str), u8"目标 %u× · 面板暂挂 1×", s.target);
 
-            ImVec2 act_sz = ImGui::CalcTextSize(actual_str);
+            ImVec2 act_sz = ImGui::CalcTextSize(rule_str);
             float readout_right = c_max.x - 14.0f * scale;
-            bool act_lit = s.speed_active && s.actual_known;
+            bool act_lit = s.enabled;
             ImVec2 pill_min(readout_right - act_sz.x - 14.0f * scale, row_top_y - 2.0f * scale);
             ImVec2 pill_max(readout_right, row_top_y + font_h + 2.0f * scale);
             draw->AddRectFilled(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 24) : IM_COL32(255, 255, 255, 18), 4.0f * scale);
             draw->AddRect(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 86) : IM_COL32(255, 255, 255, 32), 4.0f * scale, 0, 1.0f);
-            DrawBoxedText(draw,pill_min,pill_max,act_lit?kColBlueAccent:kColTextMuted,actual_str);
+            DrawBoxedText(draw,pill_min,pill_max,act_lit?kColBlueAccent:kColTextMuted,rule_str);
 
-            char target_str[16];
-            std::snprintf(target_str, sizeof(target_str), u8"%u×", s.target);
-            ImVec2 tgt_sz = ImGui::CalcTextSize(target_str);
-            const char* tgt_prefix = u8"目标 ";
-            ImVec2 pre_sz = ImGui::CalcTextSize(tgt_prefix);
-            float tgt_x = pill_min.x - tgt_sz.x - 10.0f * scale;
-            draw->AddText(ImVec2(tgt_x, row_top_y), kColBlueAccent, target_str);
-            draw->AddText(ImVec2(tgt_x - pre_sz.x, row_top_y), kColTextMuted, tgt_prefix);
+            if (!s.enabled) {
+                char target_str[32];std::snprintf(target_str, sizeof(target_str), u8"目标 %u×", s.target);
+                ImVec2 tgt_sz = ImGui::CalcTextSize(target_str);
+                draw->AddText(ImVec2(pill_min.x - tgt_sz.x - 10.0f * scale, row_top_y), kColTextMuted, target_str);
+            }
 
             // Interactive Slider Widget (16px track, 20px white knob, 4x stardust)
             // Shared alignment baseline for slider, notches, and step labels
@@ -662,13 +627,12 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                 const char* desc;
                 const char* switch_id;
                 bool configured;
-                bool active;
                 UiCommand cmd;
             };
             CapRow rows[3] = {
-                { u8"自动推进对话", u8"单句输出完成后自动进入下一句", "##SwAdv", s.advance, s.advance_active, UiCommand::Advance },
-                { u8"自动选择首项", u8"出现对话分支时自动选择第一个选项", "##SwFirst", s.choose_first, s.choose_active, UiCommand::ChooseFirst },
-                { u8"跳过对话冷却", u8"跳过对话切换冷却，连续推进不卡顿", "##SwSkip", s.skip_cooldown, s.skip_active, UiCommand::SkipCooldown }
+                { u8"自动推进对话", u8"单句输出完成后自动进入下一句", "##SwAdv", s.advance, UiCommand::Advance },
+                { u8"自动选择首项", u8"出现对话分支时自动选择第一个选项", "##SwFirst", s.choose_first, UiCommand::ChooseFirst },
+                { u8"跳过对话冷却", u8"跳过对话切换冷却，连续推进不卡顿", "##SwSkip", s.skip_cooldown, UiCommand::SkipCooldown }
             };
 
             const float sw_w = 34.0f * scale;
@@ -695,14 +659,15 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                 draw->AddText(ImVec2(text_left, line1_y), kColTextPrimary, rows[i].title);
                 float tw = ImGui::CalcTextSize(rows[i].title).x;
 
-                const char* tag_str = (!rows[i].configured) ? u8"关闭" :
-                                      (rows[i].active)      ? u8"生效中" : u8"待机";
+                bool ready = rows[i].configured && s.enabled;
+                const char* tag_str = (!rows[i].configured) ? u8"已关闭" :
+                                      ready ? u8"已就绪" : u8"待启用";
                 ImU32 tag_bg = (!rows[i].configured) ? IM_COL32(255, 255, 255, 10) :
-                               (rows[i].active)      ? kColBlueDim : IM_COL32(255, 255, 255, 18);
+                               ready ? kColBlueDim : IM_COL32(255, 255, 255, 18);
                 ImU32 tag_fg = (!rows[i].configured) ? kColTextDim :
-                               (rows[i].active)      ? kColBlueAccent : kColTextMuted;
+                               ready ? kColBlueAccent : kColTextMuted;
                 ImU32 tag_bd = (!rows[i].configured) ? IM_COL32(255, 255, 255, 24) :
-                               (rows[i].active)      ? IM_COL32(80, 170, 255, 92) : IM_COL32(255, 255, 255, 36);
+                               ready ? IM_COL32(80, 170, 255, 92) : IM_COL32(255, 255, 255, 36);
 
                 ImVec2 tag_sz = ImGui::CalcTextSize(tag_str);
                 float tag_h = tag_sz.y + 2.0f * scale;

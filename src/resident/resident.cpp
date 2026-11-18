@@ -52,12 +52,16 @@ UiState GetUiState() {
     AcquireSRWLockShared(&ui_lock);UiState copy=ui_state;ReleaseSRWLockShared(&ui_lock);
     uint64_t heartbeat=(uint64_t)InterlockedCompareExchange64(&last_control,0,0);
     if(heartbeat&&!Fresh(GetTickCount64(),heartbeat,400)) {
-        copy.actual_known=copy.speed_active=copy.effects_active=false;
+        copy.actual_known=copy.speed_active=copy.effects_active=copy.dialogue_ready=false;
         copy.advance_active=copy.choose_active=copy.skip_active=false;copy.phase=UiPhase::Fault;
         strcpy_s(copy.reason,u8"控制器响应超时，等待恢复确认");
     }
-    else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault)
-        strcpy_s(copy.reason,u8"面板开启期间暂不加速，关闭后自动继续");
+    else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault) {
+        if(copy.dialogue_ready) {
+            if(copy.target==1)strcpy_s(copy.reason,u8"检测到当前处于对话中，关闭面板后按原速执行已选功能");
+            else std::snprintf(copy.reason,sizeof(copy.reason),u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速",copy.target);
+        } else strcpy_s(copy.reason,copy.target==1?u8"当前保持原速；关闭面板后进入对话执行已选功能":u8"当前保持原速；关闭面板后进入对话自动加速");
+    }
     return copy;
 }
 void RendererTick() {InterlockedExchange64(&LastPresent,(LONG64)GetTickCount64());InterlockedExchange(&RendererReady,1);}

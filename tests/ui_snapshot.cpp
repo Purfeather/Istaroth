@@ -64,8 +64,9 @@ int wmain(int argc,wchar_t** argv) {
             state.advance_active=state.skip_active=true;state.actual=mode==L"active"?4.f:1.f;
             state.target=mode==L"active"?4u:1u;state.speed_active=state.actual>1;
             strcpy_s(state.reason,u8"正在按设定倍率推进 · 按 F10 可随时急停");
-        } else if(mode==L"waiting"||mode==L"mixed") {
+        } else if(mode==L"waiting"||mode==L"mixed"||mode==L"ready") {
             state.phase=istaroth::UiPhase::Waiting;state.enabled=true;
+            state.dialogue_ready=mode==L"ready";
             if(mode==L"mixed")state.choose_first=state.skip_cooldown=false;
             strcpy_s(state.reason,u8"进入可操作对话后自动加速，平时保持原速");
         } else if(mode==L"confirming") {
@@ -77,9 +78,22 @@ int wmain(int argc,wchar_t** argv) {
         } else if(mode==L"fault") {
             state.phase=istaroth::UiPhase::Fault;state.actual_known=false;
             strcpy_s(state.reason,u8"组件发生异常，已自动停止；请重启游戏后重新加载");
+        } else if(mode==L"starting") {
+            state.phase=istaroth::UiPhase::Starting;state.enabled=true;state.initialized=false;state.actual_known=false;
+            strcpy_s(state.reason,u8"正在初始化组件，请稍候");
         } else if(mode==L"disabled") {
             state.advance=state.choose_first=state.skip_cooldown=false;
         } else if(mode!=L"paused")return ERROR_INVALID_PARAMETER;
+        if(open&&state.enabled&&state.phase!=istaroth::UiPhase::Fault) {
+            if(state.phase==istaroth::UiPhase::Active) {
+                state.phase=istaroth::UiPhase::Waiting;state.dialogue_ready=true;state.actual=1;
+                state.speed_active=state.effects_active=state.advance_active=state.choose_active=state.skip_active=false;
+            }
+            if(state.dialogue_ready) {
+                if(state.target==1)strcpy_s(state.reason,u8"检测到当前处于对话中，关闭面板后按原速执行已选功能");
+                else std::snprintf(state.reason,sizeof(state.reason),u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速",state.target);
+            } else strcpy_s(state.reason,state.target==1?u8"当前保持原速；关闭面板后进入对话执行已选功能":u8"当前保持原速；关闭面板后进入对话自动加速");
+        }
         for(unsigned frame=0;frame<3;frame++) {
             ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
             istaroth::DrawResidentUi(state,open,scale,nullptr);

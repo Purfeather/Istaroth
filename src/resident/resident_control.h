@@ -58,7 +58,8 @@ public:
         if(clock_live&&c->lease_active&&(!std::isfinite(c->baseline)||c->baseline<=0))fault=ERROR_INVALID_DATA;
         if(actions_live&&(a->error||a->status==3))fault=a->error?a->error:ERROR_INVALID_STATE;
         if(actions_live&&a->status>3&&a->status!=7)fault=ERROR_INVALID_DATA;
-        bool gate=time&&actions&&a->gate_valid==1&&a->foreground==1&&foreground&&rendered&&initialized&&!fault;
+        u.dialogue_ready=time&&actions&&a->gate_valid==1&&a->foreground==1&&rendered&&initialized&&!fault;
+        bool gate=u.dialogue_ready&&foreground;
         result.epoch=actions?a->gate_epoch:0;
         u.dialogue=actions&&a->root_native;u.actual_known=time&&!fault;
         if(u.actual_known) {

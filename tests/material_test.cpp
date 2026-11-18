@@ -135,7 +135,7 @@ static void Previews() {
             if(mode>=2)Hr(blur.Draw(device.Get(),context.Get(),canvas.Get(),{0,0,(LONG)width,(LONG)height},mode==2?3.f:4.8f,&backdrop));
             auto& io=ImGui::GetIO();io.DisplaySize=ImVec2((float)width,(float)height);io.DeltaTime=1.f/60;
             ImGui_ImplDX11_NewFrame();ImGui::NewFrame();UiState state;state.initialized=state.enabled=state.foreground=state.actual_known=true;
-            state.phase=UiPhase::Waiting;strcpy_s(state.reason,u8"进入可操作对话后自动加速，平时保持原速");state.icon_texture=(uint64_t)(uintptr_t)icon.Get();state.backdrop=(uint64_t)(uintptr_t)backdrop;
+            state.phase=UiPhase::Waiting;strcpy_s(state.reason,u8"当前保持原速；关闭面板后进入对话自动加速");state.icon_texture=(uint64_t)(uintptr_t)icon.Get();state.backdrop=(uint64_t)(uintptr_t)backdrop;
             state.display_width=width;state.display_height=height;bool open=true;DrawResidentUi(state,open,2.f,nullptr);ImGui::Render();
             auto target=mode?corrected.Get():legacy.Get();context->OMSetRenderTargets(1,&target,nullptr);ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         }
