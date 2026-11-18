@@ -431,7 +431,7 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
 // -----------------------------------------------------------------------------
 // In-Game Menu Modal Window
 // -----------------------------------------------------------------------------
-static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit emit) {
+static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit emit, float opacity) {
     const float display_w = (s.display_width > 0.0f) ? s.display_width : ImGui::GetIO().DisplaySize.x;
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
     const PhaseStyle ps = GetPhaseStyle(s);
@@ -447,6 +447,8 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                              ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoBackground;
+
+    if (!menu_open) flags |= ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing;
 
     if (ImGui::Begin("##IstarothMenuModal", &menu_open, flags)) {
         ImGui::SetWindowFontScale((16.0f * scale) / GImGui->FontBaseSize);
@@ -753,6 +755,11 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
 
         ImGui::PopStyleVar();
         draw->PopClipRect();
+        // Fade every vertex, including custom colors and the blurred backdrop.
+        if (opacity < 1.f) for (auto& vertex : draw->VtxBuffer) {
+            int alpha = (int)((vertex.col >> IM_COL32_A_SHIFT) & 0xff);
+            vertex.col = WithAlpha(vertex.col, (int)std::round(alpha * opacity));
+        }
     }
     ImGui::End();
 }
@@ -760,15 +767,23 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
 // -----------------------------------------------------------------------------
 // Public Exported Entry Point
 // -----------------------------------------------------------------------------
-void DrawResidentUi(const UiState& s, bool& menu_open, float scale, UiEmit emit) {
+float StepMenuOpacity(float current, bool menu_open, float delta_time) {
+    float target = menu_open ? 1.f : 0.f;
+    float dt = std::isfinite(delta_time) ? ImClamp(delta_time, 0.f, .05f) : 0.f;
+    current += (target - current) * (1.f - std::exp(-20.f * dt));
+    return std::fabs(target - current) < .01f ? target : current;
+}
+
+void DrawResidentUi(const UiState& s, bool& menu_open, float scale, UiEmit emit, float menu_opacity) {
     if (scale <= 0.0f) scale = 1.0f;
 
     // 1. Always render the Top-Center Full-Information HUD Overlay
     DrawTopCenterHud(s, menu_open, scale);
 
-    // 2. Conditionally render the In-Game Menu Modal Window
-    if (menu_open) {
-        DrawMenuModal(s, menu_open, scale, emit);
+    // Visual fade-out continues after input ownership has returned to the game.
+    if (menu_opacity < 0.f) menu_opacity = menu_open ? 1.f : 0.f;
+    if (menu_open || menu_opacity > .01f) {
+        DrawMenuModal(s, menu_open, scale, menu_open ? emit : nullptr, ImClamp(menu_opacity, 0.f, 1.f));
     }
 }
 

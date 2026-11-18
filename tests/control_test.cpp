@@ -17,6 +17,24 @@ int main() {
     CHECK(run().ui.phase==UiPhase::Paused&&run().ui.actual_known&&run().ui.actual==1);
     controller.ActionsSent(false,d,8,4); // A gate epoch change cannot restart an already-paused ACK.
     CHECK(run().ui.phase==UiPhase::Paused);
+    for(unsigned switches=0;switches<8;switches++) {
+        d.advance=(switches&1)!=0;d.choose=(switches&2)!=0;d.skip=(switches&4)!=0;
+        controller.ActionsSent(false,d,8,10+switches*2);
+        CHECK(run().ui.phase==UiPhase::Paused&&!run().permit&&!run().ui.effects_active);
+    }
+    d.advance=d.choose=d.skip=true;
+    {
+        ResidentControl transitions;Desired request;
+        transitions.ClockSent(false,1,2);transitions.ActionsSent(false,request,7,2);
+        transitions.ActionsSent(true,request,7,4);transitions.ActionsSent(false,request,7,6);
+        auto stopped=[&](){return transitions.Evaluate(request,&c,&a,42,1000,true,true,true);};
+        CHECK(stopped().ui.phase==UiPhase::Restoring); // Real permit loss must still wait for a stop ACK.
+        request.skip=false;transitions.ActionsSent(false,request,8,8);
+        CHECK(stopped().ui.phase==UiPhase::Restoring);
+        a.ack=6;CHECK(stopped().ui.phase==UiPhase::Paused);
+        request.choose=false;transitions.ActionsSent(false,request,8,10);
+        CHECK(stopped().ui.phase==UiPhase::Paused);a.ack=2;
+    }
     d.enabled=true;CHECK(run().clock_enabled&&!run().permit);
     controller.ClockSent(true,4,4);CHECK(!run().permit);
     c.ack=4;c.status=2;c.lease_active=1;c.baseline=1;c.scale=4;

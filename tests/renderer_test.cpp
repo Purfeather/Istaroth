@@ -6,6 +6,7 @@
 #include <d3dcompiler.h>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include "diagnostics.h"
 #include "imgui_internal.h"
 static unsigned checks=0,ticks=0,original_keys=0,global_writes=0,activation_calls=0;
@@ -64,8 +65,44 @@ static LRESULT CALLBACK Host(HWND window,UINT message,WPARAM w,LPARAM l) {
 static void Pump() {
     MSG message;while(PeekMessageW(&message,istaroth::GameWindow,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
 }
+static void MenuFadeProbe() {
+    using namespace istaroth;
+    float opacity=StepMenuOpacity(0,true,1.f/60);
+    Check(opacity>0&&opacity<1);float opening=opacity;
+    opacity=StepMenuOpacity(opacity,false,1.f/60);Check(opacity>0&&opacity<opening);
+    Check(StepMenuOpacity(opacity,true,0)==opacity&&StepMenuOpacity(opacity,true,-1)==opacity);
+    Check(StepMenuOpacity(opacity,true,std::numeric_limits<float>::quiet_NaN())==opacity);
+    for(unsigned frame=0;frame<30;frame++)opacity=StepMenuOpacity(opacity,true,1.f/60);
+    Check(opacity==1);
+    for(unsigned frame=0;frame<30;frame++)opacity=StepMenuOpacity(opacity,false,1.f/60);
+    Check(opacity==0);
+    ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=io.LogFilename=nullptr;
+    io.DisplaySize=ImVec2(1920,1080);io.DeltaTime=1.f/60;
+    unsigned char* pixels=nullptr;int width=0,height=0;io.Fonts->GetTexDataAsRGBA32(&pixels,&width,&height);
+    UiState state;state.phase=UiPhase::Paused;state.initialized=state.actual_known=true;
+    state.backdrop=2;state.icon_texture=3;
+    auto frame=[&](bool open,float alpha) {
+        ImGui::NewFrame();DrawResidentUi(state,open,1,nullptr,alpha);ImGui::Render();
+        return ImGui::FindWindowByName("##IstarothMenuModal");
+    };
+    frame(true,1);frame(true,1);auto menu=frame(true,1);
+    ImVector<ImU32> colors;for(auto& vertex:menu->DrawList->VtxBuffer)colors.push_back(vertex.col);
+    menu=frame(false,.5f);
+    Check(menu->Active&&(menu->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs);
+    Check((menu->Flags&ImGuiWindowFlags_NoFocusOnAppearing)!=0&&menu->DrawList->VtxBuffer.Size==colors.Size);
+    bool faded=true,backdrop=false,icon=false;
+    for(int i=0;i<colors.Size;i++) {
+        ImU32 expected=(colors[i]&~IM_COL32_A_MASK)|((ImU32)std::round(((colors[i]>>IM_COL32_A_SHIFT)&255)*.5f)<<IM_COL32_A_SHIFT);
+        if(menu->DrawList->VtxBuffer[i].col!=expected)faded=false;
+    }
+    for(auto& command:menu->DrawList->CmdBuffer){backdrop|=command.GetTexID()==2;icon|=command.GetTexID()==3;}
+    Check(faded&&backdrop&&icon);
+    menu=frame(false,0);Check(!menu->Active&&ImGui::GetDrawData()->TotalVtxCount>0);
+    ImGui::DestroyContext();
+}
 int main() {
     using namespace istaroth;
+    MenuFadeProbe();
     ResidentModule=GetModuleHandleW(nullptr);wchar_t executable[MAX_PATH];GetModuleFileNameW(nullptr,executable,MAX_PATH);
     DataDirectory=executable;DataDirectory.resize(DataDirectory.find_last_of(L"\\/")+1);
     WNDCLASSW type{};type.lpfnWndProc=Host;type.hInstance=ResidentModule;type.lpszClassName=L"Istaroth.OwnedDxgiHost";
@@ -141,6 +178,30 @@ int main() {
     }
     SendMessageW(GameWindow,WM_KEYDOWN,'B',0);Check(original_keys==1);
     SetMenuVisible(false);Pump();Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15);Check(input_count==0);
+    {
+        menu_opacity=1;const float red[]={.9f,.1f,.1f,1};host_context->ClearRenderTargetView(view.Get(),red);
+        Render(chain.Get(),0);Check(menu_opacity>0&&menu_opacity<1&&!renderer_error);
+        auto menu=ImGui::FindWindowByName("##IstarothMenuModal");Check(menu->Active&&(menu->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs);
+        // A center pixel far outside the HUD must receive this frame's blur while fading out.
+        ID3D11ShaderResourceView* backdrop=nullptr;
+        for(auto& command:menu->DrawList->CmdBuffer)if(command.GetTexID()!=ImGui::GetIO().Fonts->TexID&&command.GetTexID()!=(ImTextureID)(uintptr_t)icon.Get()) {
+            backdrop=(ID3D11ShaderResourceView*)(uintptr_t)command.GetTexID();break;
+        }
+        Check(backdrop!=nullptr);ComPtr<ID3D11Resource> resource;backdrop->GetResource(&resource);
+        ComPtr<ID3D11Texture2D> texture;Check(SUCCEEDED(resource.As(&texture)));
+        D3D11_TEXTURE2D_DESC desc{};texture->GetDesc(&desc);desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=desc.MiscFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> staging;Check(SUCCEEDED(host_device->CreateTexture2D(&desc,nullptr,&staging)));host_context->CopyResource(staging.Get(),texture.Get());
+        D3D11_MAPPED_SUBRESOURCE mapped{};Check(SUCCEEDED(host_context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped)));
+        auto pixel=(const BYTE*)mapped.pData+(desc.Height/2)*mapped.RowPitch+(desc.Width/2)*4;
+        Check(pixel[0]>200&&pixel[1]<110&&pixel[2]<110);host_context->Unmap(staging.Get(),0);
+        unsigned before=commands;SendMessageW(GameWindow,WM_KEYDOWN,'C',0);Check(original_keys==2&&commands==before&&input_count==0);
+        float closing=menu_opacity;SetMenuVisible(true);Pump();Render(chain.Get(),0);
+        Check(MenuVisible&&menu_opacity>=closing&&(menu->Flags&ImGuiWindowFlags_NoInputs)==0);
+        SetMenuVisible(false);Pump();
+        for(unsigned frame=0;frame<30&&menu_opacity>0;frame++){menu_opacity=StepMenuOpacity(menu_opacity,false,1.f/60);Render(chain.Get(),0);}
+        Check(menu_opacity==0&&!menu->Active&&ImGui::GetDrawData()->TotalVtxCount>0);
+        Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15&&!renderer_error);
+    }
     SetMenuVisible(true);Pump();Check(MenuVisible);simulated_foreground=(HWND)(ULONG_PTR)123;clip={100,100,200,200};cursor_position={150,150};
     unsigned writes=global_writes;SendMessageW(GameWindow,WM_KILLFOCUS,0,0);Check(!MenuVisible&&cursor_count==-2);Check(global_writes==writes&&clip.left==100&&cursor_position.x==150);
     simulated_foreground=GameWindow;Check(SUCCEEDED(chain->Present(0,0)));Pump();

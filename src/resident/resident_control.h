@@ -30,7 +30,7 @@ public:
     }
     void ActionsSent(bool permit,const Desired& d,DWORD epoch,DWORD sequence) {
         if(!sequence)return;
-        uint64_t signature=(uint64_t(permit?epoch:0)<<8)|(permit?1u:0u)|(d.advance?2u:0u)|(d.choose?4u:0u)|(d.skip?8u:0u);
+        uint64_t signature=permit?(uint64_t(epoch)<<8)|1u|(d.advance?2u:0u)|(d.choose?4u:0u)|(d.skip?8u:0u):0;
         if(signature!=action_signature){action_signature=signature;action_transition=sequence;}
     }
     ControlResult Evaluate(const Desired& d,const ClockShared* c,const ActionShared* a,

@@ -45,6 +45,7 @@ static ComPtr<ID3D11RenderTargetView> target;
 static ComPtr<ID3D11ShaderResourceView> icon;
 static SceneBlur scene_blur;
 static bool blur_failure_logged=false;
+static float menu_opacity=0;
 static bool platform=false,graphics=false;
 static int last_fullscreen=-1;static unsigned last_width=0,last_height=0;
 static thread_local bool in_present=false;
@@ -117,7 +118,7 @@ static void InstallInput(HWND window) {
     previous_window=previous;
 }
 static void ResetGraphics() {
-    active_chain=nullptr;target.Reset();icon.Reset();scene_blur.Reset();blur_failure_logged=false;InterlockedExchange(&BackdropReady,0);
+    active_chain=nullptr;target.Reset();icon.Reset();scene_blur.Reset();blur_failure_logged=false;menu_opacity=0;InterlockedExchange(&BackdropReady,0);
     if(graphics)ImGui_ImplDX11_Shutdown();if(platform)ImGui_ImplWin32_Shutdown();
     graphics=platform=false;if(ImGui::GetCurrentContext())ImGui::DestroyContext();
     context.Reset();device.Reset();InterlockedExchange(&RendererReady,0);
@@ -228,8 +229,9 @@ static void Render(IDXGISwapChain* chain,UINT flags) {
         if(io.DisplaySize.x<=0||io.DisplaySize.y<=0)return;
         io.DisplayFramebufferScale=ImVec2(1,1);
         bool open=MenuVisible!=0;float scale=std::clamp(std::min(io.DisplaySize.x/1920.f,io.DisplaySize.y/1080.f),.65f,2.f);
+        menu_opacity=StepMenuOpacity(menu_opacity,open,io.DeltaTime);
         D3D11_RECT area{0,0,(LONG)dimensions.Width,(LONG)dimensions.Height};
-        if(!open) {
+        if(!open&&menu_opacity<=.01f) {
             LONG half=(LONG)ceilf(210*scale*dimensions.Width/io.DisplaySize.x);
             area.left=std::max(0L,(LONG)dimensions.Width/2-half);area.right=std::min((LONG)dimensions.Width,(LONG)dimensions.Width/2+half);
             area.bottom=std::min((LONG)dimensions.Height,(LONG)ceilf(100*scale*dimensions.Height/io.DisplaySize.y));
@@ -241,7 +243,7 @@ static void Render(IDXGISwapChain* chain,UINT flags) {
         ImGui::NewFrame();
         auto snapshot=GetUiState();snapshot.display_width=io.DisplaySize.x;snapshot.display_height=io.DisplaySize.y;
         snapshot.icon_texture=(uint64_t)(uintptr_t)icon.Get();snapshot.backdrop=(uint64_t)(uintptr_t)backdrop;
-        DrawResidentUi(snapshot,open,scale,EmitCommand);if(open!=(MenuVisible!=0))SetMenuVisible(open);
+        DrawResidentUi(snapshot,open,scale,EmitCommand,menu_opacity);if(open!=(MenuVisible!=0))SetMenuVisible(open);
         ImGui::Render();auto draw=ImGui::GetDrawData();
         // Keep mouse/UI coordinates in client space. The pinned DX11 backend does
         // not scale viewports, so adapt only its drawing data to the back buffer.
