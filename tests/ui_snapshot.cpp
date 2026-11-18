@@ -33,9 +33,11 @@ int wmain(int argc,wchar_t** argv) {
         Check(device->CreateTexture2D(&desc,nullptr,&texture));Check(device->CreateRenderTargetView(texture.Get(),nullptr,&target));
         ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.LogFilename=nullptr;
         io.DisplaySize=ImVec2((float)width,(float)height);io.DeltaTime=1.f/60.f;
+        float scale=std::clamp(std::min(width/1920.f,height/1080.f),.65f,2.f);
         wchar_t fonts[MAX_PATH];GetWindowsDirectoryW(fonts,MAX_PATH);std::wstring path=std::wstring(fonts)+L"\\Fonts\\msyh.ttc";
         char utf8[2048];WideCharToMultiByte(CP_UTF8,0,path.c_str(),-1,utf8,2048,nullptr,nullptr);
-        if(!io.Fonts->AddFontFromFileTTF(utf8,20.f,nullptr,ResidentGlyphs))throw HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+        ImFontConfig font_config;font_config.OversampleH=2;font_config.OversampleV=2;font_config.PixelSnapH=true;
+        if(!io.Fonts->AddFontFromFileTTF(utf8,16.f*scale,&font_config,ResidentGlyphs))throw HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
         wchar_t own[32768];DWORD own_length=GetModuleFileNameW(nullptr,own,32768);
         std::wstring icon_path=argc==6?argv[5]:L"";
         if(argc==5&&own_length&&own_length<32768) {
@@ -66,6 +68,12 @@ int wmain(int argc,wchar_t** argv) {
             state.phase=istaroth::UiPhase::Waiting;state.enabled=true;
             if(mode==L"mixed")state.choose_first=state.skip_cooldown=false;
             strcpy_s(state.reason,u8"等待对话，离开对话保持原速");
+        } else if(mode==L"confirming") {
+            state.phase=istaroth::UiPhase::Confirming;state.enabled=true;state.dialogue=true;
+            strcpy_s(state.reason,u8"正在确认实际倍率");
+        } else if(mode==L"restoring") {
+            state.phase=istaroth::UiPhase::Restoring;state.enabled=false;state.actual=2.5f;
+            strcpy_s(state.reason,u8"正在停止操作并确认恢复原速");
         } else if(mode==L"fault") {
             state.phase=istaroth::UiPhase::Fault;state.actual_known=false;
             strcpy_s(state.reason,u8"组件异常，已停止请求；请正常重启并加载");
@@ -74,7 +82,7 @@ int wmain(int argc,wchar_t** argv) {
         } else if(mode!=L"paused")return ERROR_INVALID_PARAMETER;
         for(unsigned frame=0;frame<3;frame++) {
             ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
-            istaroth::DrawResidentUi(state,open,std::clamp(std::min(width/1920.f,height/1080.f),.65f,2.f),nullptr);
+            istaroth::DrawResidentUi(state,open,scale,nullptr);
             ImGui::Render();auto rt=target.Get();context->OMSetRenderTargets(1,&rt,nullptr);
             const float clear[4]={.08f,.15f,.24f,1};context->ClearRenderTargetView(rt,clear);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

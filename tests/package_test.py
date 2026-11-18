@@ -9,6 +9,7 @@ import zipfile
 
 root = Path(__file__).resolve().parents[1]
 names = ['Istaroth.exe','Istaroth.dll','time_core.dll','story_probe.dll','dialogue_actions.dll']
+version = (root/'VERSION').read_text(encoding='utf8').strip()
 digest = lambda data: hashlib.sha256(data).hexdigest()
 with tempfile.TemporaryDirectory(prefix='istaroth-package-') as temporary:
     build = Path(temporary)/'build'
@@ -16,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='istaroth-package-') as temporary:
     originals = {name: ('owned fixture '+name).encode() for name in names}
     for name, data in originals.items():
         (build/name).write_bytes(data)
-    manifest = {'configuration': 'slim', 'version': '0.2.0',
+    manifest = {'configuration': 'slim', 'version': version,
                 'binaries': {name: digest(data) for name,data in originals.items()},
                 'inputs': {'docs/USAGE.txt': digest((root/'docs/USAGE.txt').read_bytes())}}
     def save_manifest():
@@ -32,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='istaroth-package-') as temporary:
     output = Path(temporary)/'valid'
     result = package(output)
     assert result.returncode == 0, result.stderr.decode('utf8', errors='replace')
-    archive = output/'Istaroth-v0.2.0-win64.zip'
+    archive = output/f'Istaroth-v{version}-win64.zip'
     with zipfile.ZipFile(archive) as zipped:
         entries = {Path(name).name: zipped.read(name) for name in zipped.namelist()}
     assert set(entries) == set(names + ['LICENSES.txt','使用说明.txt'])

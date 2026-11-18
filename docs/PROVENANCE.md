@@ -7,7 +7,7 @@
 | 加载器、驻留、UI、鼠标、控制器与自有测试 | 从本工作区当前原生源码逐项复制，来源哈希记录在 SOURCE-ORIGINS.json；原创贡献按 Apache-2.0，保留既有第三方归属。 |
 | time_core / story_probe | 时钟控制与只读剧情状态探测实现，仅包含当前版本必须的指令特征数据，不携带游戏完整 SDK 或内存转储。 |
 | dialogue_actions / dialogue_cooldown | 参考 Akebi DialogSkip 的对话时序逻辑与 Snap Hutao FastSkipTalk 的冷却跳过思路。采用独立的前台门禁、线程校验与可恢复钩子实现，未引入上游框架代码。保留相关项目参考来源与许可证声明。 |
-| Dear ImGui | 官方 v1.91.9b，提交 f5befd2d29e66809cd1110a152e375a7f1981f06，MIT。固定文件哈希见 third_party/imgui/SOURCE.json。 |
+| Dear ImGui | 基于官方 v1.91.9b，提交 f5befd2d29e66809cd1110a152e375a7f1981f06，MIT。0.3.0-dev 对 DX11 后端采样器 MaxLOD 作一处本地修改以允许图标 mipmap 采样，文件哈希和修改说明见 third_party/imgui/SOURCE.json。 |
 | Microsoft Detours | 官方 v4.0.1，提交 e4bfd6b03e50de46b47abfbd1e46b384f0c5f833，MIT。官方归档和选定源码哈希见 third_party/detours/SOURCE.json。干净构建从这些源文件生成静态库。 |
 | 历史 v0.1.0 包的 Detours | 历史测试包采用的 Detours 静态库源自本地依赖，头文件标称 4.0.1，保留 Microsoft MIT 声明；v0.1.1 已改用官方固定提交源码构建。 |
 | Akebi 3.6 | 本地参考项目的许可证为 Apache-2.0；未引入上游框架源码或 SDK。相关参考文件哈希记录于 SOURCE-ORIGINS.json。 |

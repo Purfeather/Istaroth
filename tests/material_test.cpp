@@ -62,6 +62,26 @@ static void ColorProbe() {
         Check(abs((int)pixels[p]-(mode?80:152))<=1&&abs((int)pixels[p+1]-(mode?170:213))<=1&&pixels[p+2]==255);
     }
 }
+static void MipmapProbe() {
+    D3D11_TEXTURE2D_DESC description{};description.Width=64;description.Height=64;description.MipLevels=7;description.ArraySize=1;
+    description.SampleDesc.Count=1;description.Format=DXGI_FORMAT_R8G8B8A8_UNORM;description.Usage=D3D11_USAGE_IMMUTABLE;
+    description.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+    std::vector<std::vector<BYTE>> levels(7);std::vector<D3D11_SUBRESOURCE_DATA> initial(7);
+    for(UINT level=0,size=64;level<7;++level,size=(std::max)(1u,size>>1)) {
+        BYTE r=level==0?0:(level==1?40:80),g=level==0?0:(level==1?85:170),b=level==0?0:(level==1?128:255);
+        levels[level]=Fill(size,size,r,g,b);initial[level]={levels[level].data(),size*4,0};
+    }
+    ComPtr<ID3D11Texture2D> mip_texture;Hr(device->CreateTexture2D(&description,initial.data(),&mip_texture));
+    ComPtr<ID3D11ShaderResourceView> mip_view;Hr(device->CreateShaderResourceView(mip_texture.Get(),nullptr,&mip_view));
+    auto canvas=Texture(64,64,DXGI_FORMAT_R8G8B8A8_UNORM);ComPtr<ID3D11RenderTargetView> rt;Hr(device->CreateRenderTargetView(canvas.Get(),nullptr,&rt));
+    auto& io=ImGui::GetIO();io.DisplaySize=ImVec2(64,64);io.DeltaTime=1.f/60;
+    ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
+    ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)(uintptr_t)mip_view.Get(),ImVec2(4,4),ImVec2(20,20));
+    ImGui::Render();auto target=rt.Get();context->OMSetRenderTargets(1,&target,nullptr);
+    const float clear[]={0,0,0,1};context->ClearRenderTargetView(target,clear);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());auto pixels=Read(canvas.Get());size_t p=(12*64+12)*4;
+    Check(abs((int)pixels[p]-80)<=2&&abs((int)pixels[p+1]-170)<=2&&pixels[p+2]>=253);
+}
 static void BlurChecks() {
     for(auto format:{DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,DXGI_FORMAT_B8G8R8A8_UNORM,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB}) {
         SceneBlur blur;auto data=Fill(128,128,80,170,255,format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
@@ -126,7 +146,8 @@ int main() {
     Hr(CoInitializeEx(nullptr,COINIT_MULTITHREADED));Hr(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context));
     ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=io.LogFilename=nullptr;wchar_t windows[MAX_PATH];GetWindowsDirectoryW(windows,MAX_PATH);
     auto font=std::wstring(windows)+L"\\Fonts\\msyh.ttc";char path[2048];Check(WideCharToMultiByte(CP_UTF8,0,font.c_str(),-1,path,2048,nullptr,nullptr)!=0);
-    Check(io.Fonts->AddFontFromFileTTF(path,20.f,nullptr,ResidentGlyphs)!=nullptr);Check(ImGui_ImplDX11_Init(device.Get(),context.Get()));
-    ColorProbe();BlurChecks();Previews();ImGui_ImplDX11_Shutdown();ImGui::DestroyContext();context->ClearState();CoUninitialize();
-    printf("{\"passed\":true,\"checks\":%u,\"game_accessed\":false,\"legacy_blue\":[152,213,255],\"corrected_blue\":[80,170,255],\"previews\":4,\"scope\":\"WARP sRGB palette, RGBA/BGRA blur, ROI, MSAA and generated-scene PNGs\"}\n",checks);
+    ImFontConfig font_config;font_config.OversampleH=2;font_config.OversampleV=2;font_config.PixelSnapH=true;
+    Check(io.Fonts->AddFontFromFileTTF(path,32.f,&font_config,ResidentGlyphs)!=nullptr);Check(ImGui_ImplDX11_Init(device.Get(),context.Get()));
+    ColorProbe();MipmapProbe();BlurChecks();Previews();ImGui_ImplDX11_Shutdown();ImGui::DestroyContext();context->ClearState();CoUninitialize();
+    printf("{\"passed\":true,\"checks\":%u,\"game_accessed\":false,\"legacy_blue\":[152,213,255],\"corrected_blue\":[80,170,255],\"previews\":4,\"scope\":\"WARP sRGB palette, mipmap sampling, RGBA/BGRA blur, ROI, MSAA and generated-scene PNGs\"}\n",checks);
 }

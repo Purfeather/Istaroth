@@ -7,8 +7,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include "diagnostics.h"
+#include "imgui_internal.h"
 static unsigned checks=0,ticks=0,original_keys=0,global_writes=0,activation_calls=0;
 static DWORD renderer_error=0;
+static bool fixture_enabled=false;static unsigned commands=0;static int last_value=0;
 static HWND simulated_foreground=nullptr,captured=nullptr;
 static RECT clip{10,20,30,40};static POINT cursor_position{15,25};static int cursor_count=-2;
 static HWND FakeForeground(){return simulated_foreground;}
@@ -50,8 +52,9 @@ HMODULE ResidentModule=nullptr;HWND GameWindow=nullptr;std::wstring DataDirector
 volatile LONG MenuVisible=0,RendererReady=0,BackdropReady=0;alignas(8) volatile LONG64 LastPresent=0;
 void TraceRuntime(const char* event){diagnostics::Append(DataDirectory,L"owned-renderer.log",event);}
 void SetRuntimeError(DWORD error,const char* event){renderer_error=error;TraceRuntime(event);}
-void EmitCommand(UiCommand,int){}
-UiState GetUiState(){UiState state;state.phase=UiPhase::Paused;state.initialized=true;state.actual_known=true;return state;}
+static UiCommand last_command=UiCommand::Enabled;
+void EmitCommand(UiCommand command,int value){commands++;last_command=command;last_value=value;if(command==UiCommand::Enabled)fixture_enabled=value!=0;if(command==UiCommand::Emergency)fixture_enabled=false;}
+UiState GetUiState(){UiState state;state.enabled=fixture_enabled;state.phase=fixture_enabled?UiPhase::Waiting:UiPhase::Paused;state.initialized=true;state.actual_known=true;return state;}
 void RendererTick(){ticks++;InterlockedExchange(&RendererReady,1);InterlockedExchange64(&LastPresent,GetTickCount64());}
 }
 static void Check(bool value){checks++;if(!value){fprintf(stderr,"renderer check %u failed error=0x%08lx\n",checks,renderer_error);exit(1);}}
@@ -116,6 +119,25 @@ int main() {
         auto corner=(const BYTE*)mapped.pData+(readback.Height-1)*mapped.RowPitch;
         Check(memcmp(corner,expected,4)==0);
         host_context->Unmap(image.Get(),0);Check(SUCCEEDED(chain->Present(0,0)));
+    }
+    {
+        // Route mouse messages through the renderer, into only this hidden host.
+        auto click=[&](ImVec2 p) {
+            LPARAM point=MAKELPARAM((int)p.x,(int)p.y);
+            SendMessageW(GameWindow,WM_MOUSEMOVE,0,point);Render(chain.Get(),0);
+            SendMessageW(GameWindow,WM_LBUTTONDOWN,MK_LBUTTON,point);Render(chain.Get(),0);
+            SendMessageW(GameWindow,WM_LBUTTONUP,0,point);Render(chain.Get(),0);Pump();
+        };
+        auto menu=ImGui::FindWindowByName("##IstarothMenuModal");Check(menu!=nullptr);
+        float scale=std::clamp(std::min(ImGui::GetIO().DisplaySize.x/1920.f,ImGui::GetIO().DisplaySize.y/1080.f),.65f,2.f);
+        ImVec2 toggle(menu->Pos.x+menu->Size.x-78.f*scale,menu->Pos.y+96.f*scale);
+        unsigned before=commands;click(toggle);Check(commands==before+1&&last_command==UiCommand::Enabled&&last_value==1&&fixture_enabled);
+        click(toggle);Check(commands==before+2&&last_command==UiCommand::Enabled&&last_value==0&&!fixture_enabled);
+        SendMessageW(GameWindow,WM_KEYDOWN,VK_F10,0);SendMessageW(GameWindow,WM_KEYDOWN,VK_F10,0);
+        Check(commands==before+4&&last_command==UiCommand::Emergency&&last_value==0&&!fixture_enabled);
+        click(ImVec2(menu->Pos.x+menu->Size.x-27.f*scale,menu->Pos.y+23.f*scale));
+        Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15&&input_count==0);
+        SetMenuVisible(true);Pump();Render(chain.Get(),0);Check(MenuVisible);
     }
     SendMessageW(GameWindow,WM_KEYDOWN,'B',0);Check(original_keys==1);
     SetMenuVisible(false);Pump();Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15);Check(input_count==0);

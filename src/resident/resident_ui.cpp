@@ -8,22 +8,106 @@
 namespace istaroth {
 
 // -----------------------------------------------------------------------------
-// Scheme C: Astral Azure on Frosted Glass (Strict Two-Color Discipline)
+// Scheme C: Astral Azure on Frosted Glass + Semantic Phase Palette
 // -----------------------------------------------------------------------------
-static constexpr ImU32 kColGlassModal   = IM_COL32(14, 20, 32, 184); // rgba(14, 20, 32, 0.72)
-static constexpr ImU32 kColGlassHud     = IM_COL32(10, 16, 26, 204); // rgba(10, 16, 26, 0.80)
+static constexpr ImU32 kColGlassModal   = IM_COL32(12, 18, 30, 200); // rgba(12, 18, 30, 0.78)
+static constexpr ImU32 kColGlassHud     = IM_COL32(10, 16, 26, 214); // rgba(10, 16, 26, 0.84)
 static constexpr ImU32 kColCardBg       = IM_COL32(255, 255, 255, 10); // rgba(255, 255, 255, 0.04)
 static constexpr ImU32 kColCardBgHover  = IM_COL32(255, 255, 255, 18); // rgba(255, 255, 255, 0.07)
-static constexpr ImU32 kColBorderSubtle = IM_COL32(255, 255, 255, 26); // rgba(255, 255, 255, 0.10)
+static constexpr ImU32 kColBorderSubtle = IM_COL32(255, 255, 255, 38); // rgba(255, 255, 255, 0.15)
+static constexpr ImU32 kColBorderRim    = IM_COL32(0, 0, 0, 72);       // subtle outer contrast rim
 static constexpr ImU32 kColBorderActive = IM_COL32(80, 170, 255, 166); // rgba(80, 170, 255, 0.65)
 static constexpr ImU32 kColBlueAccent   = IM_COL32(80, 170, 255, 255); // #50AAFF
 static constexpr ImU32 kColBlueGlow     = IM_COL32(80, 170, 255, 97);  // rgba(80, 170, 255, 0.38)
 static constexpr ImU32 kColBlueDim      = IM_COL32(80, 170, 255, 45);  // rgba(80, 170, 255, 0.18)
+static constexpr ImU32 kColFaultAccent  = IM_COL32(248, 81, 73, 255);  // #F85149 (Fault)
 static constexpr ImU32 kColTextPrimary  = IM_COL32(255, 255, 255, 255);
-static constexpr ImU32 kColTextMuted    = IM_COL32(255, 255, 255, 153); // rgba(255, 255, 255, 0.60)
-static constexpr ImU32 kColTextDim      = IM_COL32(255, 255, 255, 82);  // rgba(255, 255, 255, 0.32)
+static constexpr ImU32 kColTextMuted    = IM_COL32(255, 255, 255, 178); // rgba(255, 255, 255, 0.70)
+static constexpr ImU32 kColTextDim      = IM_COL32(255, 255, 255, 108); // rgba(255, 255, 255, 0.42)
 static constexpr ImU32 kColWhite        = IM_COL32(255, 255, 255, 255);
 static constexpr ImU32 kColDarkText     = IM_COL32(6, 9, 14, 255);
+static constexpr ImU32 kColStopFill     = IM_COL32(248, 81, 73, 30);
+static constexpr ImU32 kColStopHover    = IM_COL32(248, 81, 73, 54);
+static constexpr ImU32 kColStopBorder   = IM_COL32(248, 81, 73, 108);
+static constexpr ImU32 kColStopText     = IM_COL32(255, 176, 172, 255);
+
+static ImU32 WithAlpha(ImU32 col, int alpha) {
+    ImU32 a = (ImU32)ImClamp(alpha, 0, 255);
+    return (col & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
+}
+
+static ImU32 LerpColor(ImU32 a, ImU32 b, float t) {
+    t = ImClamp(t, 0.0f, 1.0f);
+    int ar = (int)((a >> IM_COL32_R_SHIFT) & 0xFF), ag = (int)((a >> IM_COL32_G_SHIFT) & 0xFF);
+    int ab = (int)((a >> IM_COL32_B_SHIFT) & 0xFF), aa = (int)((a >> IM_COL32_A_SHIFT) & 0xFF);
+    int br = (int)((b >> IM_COL32_R_SHIFT) & 0xFF), bg = (int)((b >> IM_COL32_G_SHIFT) & 0xFF);
+    int bb = (int)((b >> IM_COL32_B_SHIFT) & 0xFF), ba = (int)((b >> IM_COL32_A_SHIFT) & 0xFF);
+    return IM_COL32(
+        (int)std::round(ar + (br - ar) * t),
+        (int)std::round(ag + (bg - ag) * t),
+        (int)std::round(ab + (bb - ab) * t),
+        (int)std::round(aa + (ba - aa) * t));
+}
+
+static float AnimateFloat(ImGuiID id, float target, float speed) {
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    float cur = storage->GetFloat(id, -1.0f);
+    if (cur < 0.0f) {
+        storage->SetFloat(id, target);
+        return target;
+    }
+    float dt = ImClamp(ImGui::GetIO().DeltaTime, 0.0f, 0.05f);
+    if (dt > 0.0f && std::fabs(target - cur) > 0.001f) {
+        cur += (target - cur) * (1.0f - std::exp(-speed * dt));
+    } else if (std::fabs(target - cur) <= 0.001f) {
+        cur = target;
+    }
+    storage->SetFloat(id, cur);
+    return cur;
+}
+
+static float PulseWave() {
+    return 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 3.0f);
+}
+
+struct PhaseStyle {
+    ImU32 accent;
+    ImU32 text;
+    ImU32 hud_border;
+    ImU32 card_border;
+    ImU32 tag_bg;
+    ImU32 tag_fg;
+    ImU32 tag_border;
+    bool has_halo;
+    bool pulse;
+};
+
+static PhaseStyle GetPhaseStyle(const UiState& s) {
+    switch (s.phase) {
+        case UiPhase::Active:
+            return { kColBlueAccent, kColBlueAccent, kColBorderActive, WithAlpha(kColBlueAccent, 96),
+                     kColBlueDim, kColBlueAccent, kColBorderActive, true, true };
+        case UiPhase::Waiting:
+            return { kColBlueAccent, kColBlueAccent, kColBorderActive, WithAlpha(kColBlueAccent, 96),
+                     kColBlueDim, kColBlueAccent, kColBorderActive, true, false };
+        case UiPhase::Fault:
+            return { kColFaultAccent, kColStopText, WithAlpha(kColFaultAccent, 150), WithAlpha(kColFaultAccent, 108),
+                     IM_COL32(255, 255, 255, 8), kColTextDim, 0, true, false };
+        case UiPhase::Confirming:
+        case UiPhase::Restoring:
+        case UiPhase::Starting:
+        case UiPhase::Paused:
+        default:
+            return { s.enabled ? kColBlueAccent : kColTextDim,
+                     s.enabled ? kColBlueAccent : kColTextPrimary,
+                     s.enabled ? kColBorderActive : IM_COL32(255, 255, 255, 38),
+                     kColBorderSubtle,
+                     s.enabled ? kColBlueDim : IM_COL32(255, 255, 255, 8),
+                     s.enabled ? kColBlueAccent : kColTextDim,
+                     s.enabled ? kColBorderActive : 0,
+                     false, false };
+    }
+}
 
 static ImVec4 TextInkBounds(const char* text) {
     ImFont* font=ImGui::GetFont();float advance=0;
@@ -67,6 +151,7 @@ static void DrawBackdropUnderlay(ImDrawList* draw, uint64_t backdrop, float disp
         uv1.x = ImClamp(uv1.x, 0.0f, 1.0f); uv1.y = ImClamp(uv1.y, 0.0f, 1.0f);
         draw->AddImageRounded((ImTextureID)backdrop, min_pos, max_pos, uv0, uv1, IM_COL32_WHITE, rounding);
     }
+    draw->AddRect(ImVec2(min_pos.x - 1.0f, min_pos.y - 1.0f), ImVec2(max_pos.x + 1.0f, max_pos.y + 1.0f), kColBorderRim, rounding + 1.0f, 0, 1.0f);
     draw->AddRectFilled(min_pos, max_pos, tint_glass, rounding);
     draw->AddRect(min_pos, max_pos, kColBorderSubtle, rounding, 0, 1.0f);
 }
@@ -83,41 +168,41 @@ static void DrawStaticIcon(ImDrawList* draw,uint64_t texture,const ImVec2& cente
 // -----------------------------------------------------------------------------
 // Custom Widget: Clean Flat Switch
 // -----------------------------------------------------------------------------
-static bool DrawCleanSwitch(const char* id, bool* v, float scale) {
-    ImGuiWindow* window = ImGui::GetCurrentWindow();
-    if (window->SkipItems) return false;
+static void DrawSwitchVisual(ImDrawList* draw, ImGuiID anim_seed, const ImRect& bb, bool on, bool hovered, float scale) {
+    float width = bb.Max.x - bb.Min.x;
+    float height = bb.Max.y - bb.Min.y;
+    float rounding = height * 0.5f;
+    float t = AnimateFloat(anim_seed, on ? 1.0f : 0.0f, 18.0f);
+    float ht = AnimateFloat(anim_seed + 1u, hovered ? 1.0f : 0.0f, 16.0f);
 
-    ImGuiContext& g = *GImGui;
-    const ImGuiStyle& style = g.Style;
-    const ImGuiID imgui_id = window->GetID(id);
-
-    const float width  = 34.0f * scale;
-    const float height = 18.0f * scale;
-    const ImVec2 pos   = window->DC.CursorPos;
-    const ImRect bb(pos, ImVec2(pos.x + width, pos.y + height));
-
-    ImGui::ItemSize(bb, style.FramePadding.y);
-    if (!ImGui::ItemAdd(bb, imgui_id)) return false;
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bb, imgui_id, &hovered, &held);
-    if (pressed) {
-        *v = !(*v);
-        ImGui::MarkItemEdited(imgui_id);
+    ImU32 rail_off = LerpColor(IM_COL32(255, 255, 255, 36), IM_COL32(255, 255, 255, 54), ht);
+    ImU32 rail_on  = LerpColor(kColBlueAccent, IM_COL32(104, 186, 255, 255), ht);
+    ImU32 rail_col = LerpColor(rail_off, rail_on, t);
+    draw->AddRectFilled(bb.Min, bb.Max, rail_col, rounding);
+    if (t < 0.99f) {
+        draw->AddRect(bb.Min, bb.Max, WithAlpha(IM_COL32(255, 255, 255, 34), (int)std::round(34.0f * (1.0f - t))), rounding, 0, 1.0f);
     }
 
-    ImDrawList* draw = window->DrawList;
-    float rounding = height * 0.5f;
-    ImU32 rail_col = (*v) ? kColBlueAccent : IM_COL32(255, 255, 255, 31);
-    draw->AddRectFilled(bb.Min, bb.Max, rail_col, rounding);
-
     float knob_radius = 6.0f * scale;
-    float knob_offset_x = (*v) ? (width - 3.0f * scale - knob_radius) : (3.0f * scale + knob_radius);
+    float x_off = 3.0f * scale + knob_radius;
+    float x_on  = width - 3.0f * scale - knob_radius;
+    float knob_offset_x = x_off + (x_on - x_off) * t;
     ImVec2 knob_center(bb.Min.x + knob_offset_x, bb.Min.y + height * 0.5f);
-    ImU32 knob_col = (*v) ? kColDarkText : kColWhite;
-    draw->AddCircleFilled(knob_center, knob_radius, knob_col, 16);
+    draw->AddCircleFilled(ImVec2(knob_center.x, knob_center.y + 1.0f * scale), knob_radius + 0.5f * scale, IM_COL32(0, 0, 0, 64), 16);
+    draw->AddCircleFilled(knob_center, knob_radius, LerpColor(IM_COL32(228, 234, 242, 255), kColWhite, t), 16);
+}
 
-    return pressed;
+// -----------------------------------------------------------------------------
+// Helper: Keycap Badge
+// -----------------------------------------------------------------------------
+static float DrawKeycap(ImDrawList* draw, const ImVec2& pos, const char* label, float scale, ImU32 fg, ImU32 bg, ImU32 border) {
+    ImVec2 sz = ImGui::CalcTextSize(label);
+    ImVec2 k_min(pos.x, pos.y);
+    ImVec2 k_max(pos.x + sz.x + 12.0f * scale, pos.y + sz.y + 4.0f * scale);
+    draw->AddRectFilled(k_min, k_max, bg, 4.0f * scale);
+    draw->AddRect(k_min, k_max, border, 4.0f * scale, 0, 1.0f);
+    DrawBoxedText(draw, k_min, k_max, fg, label);
+    return k_max.x - k_min.x;
 }
 
 // -----------------------------------------------------------------------------
@@ -172,12 +257,15 @@ static bool DrawDiscreteSlider(const char* id, unsigned* target_val, float scale
     draw->AddRectFilled(track_min, track_max, IM_COL32(255, 255, 255, 28), rounding);
 
     // 2. Active fill: fully rounded ends, preventing square edges at all steps
-    float fill_norm = (float)(step - 1) / 3.0f;
+    float target_norm = (float)(step - 1) / 3.0f;
+    float fill_norm = AnimateFloat(imgui_id + 1u, target_norm, held ? 32.0f : 20.0f);
+    float halo_t    = AnimateFloat(imgui_id + 2u, (step == 4 || hovered || held) ? 1.0f : 0.0f, 14.0f);
+
     float thumb_center_x = x_start + fill_norm * active_len;
     ImVec2 fill_min = track_min;
     ImVec2 fill_max(thumb_center_x + thumb_r, track_max.y);
 
-    if (step == 4) {
+    if (step == 4 && fill_norm > 0.995f) {
         // True rounded geometry colored by vertex gradient (no rectangular clipping artifacts)
         const int vtx_start = draw->VtxBuffer.Size;
         draw->AddRectFilled(track_min, track_max, IM_COL32_WHITE, rounding);
@@ -185,11 +273,6 @@ static bool DrawDiscreteSlider(const char* id, unsigned* target_val, float scale
         ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw, vtx_start, vtx_end,
                                                      track_min, ImVec2(track_max.x, track_min.y),
                                                      IM_COL32(50, 114, 230, 255), IM_COL32(136, 194, 255, 255));
-
-        // Stardust micro specks within track
-        draw->AddCircleFilled(ImVec2(x_start + active_len * 0.22f, track_y_mid), 1.5f * scale, IM_COL32(255, 255, 255, 180));
-        draw->AddCircleFilled(ImVec2(x_start + active_len * 0.52f, track_y_mid - 2.0f * scale), 1.3f * scale, IM_COL32(255, 255, 255, 160));
-        draw->AddCircleFilled(ImVec2(x_start + active_len * 0.78f, track_y_mid + 1.5f * scale), 1.6f * scale, IM_COL32(255, 255, 255, 200));
     } else {
         draw->AddRectFilled(fill_min, fill_max, kColBlueAccent, rounding);
     }
@@ -197,17 +280,22 @@ static bool DrawDiscreteSlider(const char* id, unsigned* target_val, float scale
     // 3. Embedded notch dots exactly at step centers
     for (int i = 0; i < 4; ++i) {
         float notch_x = x_start + ((float)i / 3.0f) * active_len;
-        draw->AddCircleFilled(ImVec2(notch_x, track_y_mid), 2.2f * scale, IM_COL32(255, 255, 255, 120));
+        bool reached = (unsigned)(i + 1) <= step;
+        ImU32 notch_col = reached ? IM_COL32(255, 255, 255, 190) : IM_COL32(255, 255, 255, 115);
+        draw->AddCircleFilled(ImVec2(notch_x, track_y_mid), 2.1f * scale, notch_col, 12);
     }
 
     // 4. Prominent 20px white circular draggable thumb knob
     ImVec2 thumb_center(thumb_center_x, track_y_mid);
     draw->AddCircleFilled(ImVec2(thumb_center.x, thumb_center.y + 1.5f * scale), thumb_r + 1.0f * scale, IM_COL32(0, 0, 0, 110), 24);
-    if (step == 4) {
-        draw->AddCircleFilled(thumb_center, thumb_r + 3.5f * scale, kColBlueGlow, 24);
+    if (halo_t > 0.01f) {
+        draw->AddCircleFilled(thumb_center, thumb_r + 3.5f * scale * halo_t, WithAlpha(kColBlueAccent, (int)std::round(97.0f * halo_t)), 24);
     }
     draw->AddCircleFilled(thumb_center, thumb_r, kColWhite, 24);
     draw->AddCircle(thumb_center, thumb_r, IM_COL32(0, 0, 0, 20), 24, 1.0f);
+    if (step == 4) {
+        draw->AddCircleFilled(thumb_center, 3.0f * scale, kColBlueAccent, 16);
+    }
 
     return changed;
 }
@@ -218,13 +306,15 @@ static bool DrawDiscreteSlider(const char* id, unsigned* target_val, float scale
 static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
     const float display_w = (s.display_width > 0.0f) ? s.display_width : ImGui::GetIO().DisplaySize.x;
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
-    bool is_enabled = s.enabled;
+    const PhaseStyle ps = GetPhaseStyle(s);
+    const bool hud_lit = (s.phase == UiPhase::Active || s.phase == UiPhase::Waiting || (s.enabled && s.phase != UiPhase::Fault));
+    const bool show_live_tags = s.enabled && s.phase != UiPhase::Paused && s.phase != UiPhase::Fault;
     struct HudFunc { const char* name; bool configured; };
     HudFunc funcs[3]={{u8"推进",s.advance},{u8"首选",s.choose_first},{u8"冷却",s.skip_cooldown}};
     char speed_buf[16];
     if(s.actual_known)std::snprintf(speed_buf,sizeof(speed_buf),u8"%.1f×",s.actual);
     else std::snprintf(speed_buf,sizeof(speed_buf),u8"—");
-    ImFont* font=ImGui::GetFont();float font_size=GImGui->FontBaseSize*0.8f*scale;
+    ImFont* font=ImGui::GetFont();float font_size=16.0f*scale;
     auto measure=[&](const char* text) {
         ImVec2 size=font->CalcTextSizeA(font_size,FLT_MAX,0,text);
         size.x=std::floor(size.x+0.99999f);return size;
@@ -253,7 +343,7 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
                              ImGuiWindowFlags_NoBackground;
 
     if (ImGui::Begin("##IstarothHudCapsule", nullptr, flags)) {
-        ImGui::SetWindowFontScale(scale * 0.8f);
+        ImGui::SetWindowFontScale(font_size / GImGui->FontBaseSize);
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
         ImVec2 p_min = ImGui::GetWindowPos();
@@ -263,30 +353,39 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
         // Begin() clips to the inner content rectangle; the capsule stroke needs its AA fringe too.
         draw->PushClipRect(ImVec2(p_min.x-2,p_min.y-2),ImVec2(p_max.x+2,p_max.y+2),false);
 
+        bool hud_hovered = ImGui::IsWindowHovered();
+        float hud_ht = AnimateFloat(ImGui::GetID("##HudHoverAnim"), hud_hovered ? 1.0f : 0.0f, 16.0f);
         DrawBackdropUnderlay(draw, s.backdrop, display_w, display_h, p_min, p_max, rounding, kColGlassHud);
-        if (is_enabled) {
-            draw->AddRect(p_min, p_max, kColBorderActive, rounding, 0, 1.2f);
+        if (hud_lit || s.phase == UiPhase::Fault) {
+            ImU32 bd_col = LerpColor(ps.hud_border, WithAlpha(ps.accent, 215), hud_ht * 0.5f);
+            draw->AddRect(p_min, p_max, bd_col, rounding, 0, 1.2f);
+        } else if (hud_ht > 0.01f) {
+            draw->AddRect(p_min, p_max, WithAlpha(IM_COL32(255, 255, 255, 68), (int)std::round(68.0f * hud_ht)), rounding, 0, 1.0f);
         }
 
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (hud_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             menu_open = !menu_open;
         }
 
         // 1. Left Icon: Mini Compass
         ImVec2 compass_center(p_min.x + 20.0f * scale, p_min.y + hud_h * 0.5f);
-        DrawStaticIcon(draw, s.icon_texture, compass_center, 26.0f * scale, is_enabled ? kColBlueAccent : kColTextMuted);
+        ImU32 icon_col = (hud_lit || s.phase == UiPhase::Fault) ? ps.accent : kColTextMuted;
+        DrawStaticIcon(draw, s.icon_texture, compass_center, 26.0f * scale, icon_col);
 
         // 2. Speed readout
         ImVec2 text_pos(p_min.x+35.0f*scale,p_min.y);
-        ImU32 text_col = is_enabled ? kColBlueAccent : kColTextPrimary;
+        ImU32 text_col = (s.phase == UiPhase::Fault) ? kColStopText :
+                         hud_lit                     ? kColBlueAccent : kColTextPrimary;
         DrawBoxedText(draw,text_pos,ImVec2(text_pos.x+speed_slot,p_max.y),text_col,speed_buf);
 
         // Live status dot
         ImVec2 dot_pos(p_min.x+dot_offset,p_min.y+hud_h*0.5f);
-        ImU32 dot_col = is_enabled ? kColBlueAccent : kColTextDim;
-        draw->AddCircleFilled(dot_pos, 3.0f * scale, dot_col, 12);
-        if (is_enabled) {
-            draw->AddCircleFilled(dot_pos, 5.0f * scale, kColBlueGlow, 12);
+        draw->AddCircleFilled(dot_pos, 3.0f * scale, ps.accent, 12);
+        if (ps.has_halo || (s.enabled && s.phase != UiPhase::Fault)) {
+            float wave = ps.pulse ? PulseWave() : 0.5f;
+            int halo_a = (int)std::round(96.0f * (0.76f + 0.24f * wave));
+            float halo_r = (5.0f + (ps.pulse ? 0.9f * wave : 0.0f)) * scale;
+            draw->AddCircleFilled(dot_pos, halo_r, WithAlpha(ps.accent, halo_a), 12);
         }
 
         // Separator 1
@@ -304,12 +403,12 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
             ImVec2 t_min(tag_x, tag_y);
             ImVec2 t_max(tag_x + tag_w, tag_y + tag_h);
 
-            bool lit = s.enabled && funcs[i].configured;
-            ImU32 bg_col = lit ? kColBlueDim : IM_COL32(255, 255, 255, 8);
-            ImU32 fg_col = lit ? kColBlueAccent : kColTextDim;
+            bool lit = show_live_tags && funcs[i].configured;
+            ImU32 bg_col = lit ? ps.tag_bg : IM_COL32(255, 255, 255, 8);
+            ImU32 fg_col = lit ? ps.tag_fg : kColTextDim;
             draw->AddRectFilled(t_min, t_max, bg_col, 4.0f * scale);
-            if (lit) {
-                draw->AddRect(t_min, t_max, kColBorderActive, 4.0f * scale, 0, 1.0f);
+            if (lit && ps.tag_border != 0) {
+                draw->AddRect(t_min, t_max, ps.tag_border, 4.0f * scale, 0, 1.0f);
             }
             DrawBoxedText(draw,t_min,t_max,fg_col,funcs[i].name);
             tag_x += tag_w + 6.0f * scale;
@@ -320,7 +419,8 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
 
         ImVec2 ins_min(p_min.x+insert_offset,p_min.y+(hud_h-ins_sz.y-6.0f*scale)*0.5f);
         ImVec2 ins_max(ins_min.x + ins_sz.x + 12.0f * scale, ins_min.y + ins_sz.y + 6.0f * scale);
-        draw->AddRectFilled(ins_min, ins_max, IM_COL32(255, 255, 255, 18), 4.0f * scale);
+        draw->AddRectFilled(ins_min, ins_max, LerpColor(IM_COL32(255, 255, 255, 18), IM_COL32(255, 255, 255, 30), hud_ht), 4.0f * scale);
+        draw->AddRect(ins_min, ins_max, IM_COL32(255, 255, 255, 34), 4.0f * scale, 0, 1.0f);
         DrawBoxedText(draw,ins_min,ins_max,kColTextMuted,ins_str);
         draw->PopClipRect();
     }
@@ -334,6 +434,7 @@ static void DrawTopCenterHud(const UiState& s, bool& menu_open, float scale) {
 static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit emit) {
     const float display_w = (s.display_width > 0.0f) ? s.display_width : ImGui::GetIO().DisplaySize.x;
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
+    const PhaseStyle ps = GetPhaseStyle(s);
 
     const float modal_w = 500.0f * scale; // 保持既定基准尺寸
     const float modal_x = (display_w - modal_w) * 0.5f;
@@ -348,13 +449,14 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                              ImGuiWindowFlags_NoBackground;
 
     if (ImGui::Begin("##IstarothMenuModal", &menu_open, flags)) {
-        ImGui::SetWindowFontScale(scale * 0.8f);
+        ImGui::SetWindowFontScale((16.0f * scale) / GImGui->FontBaseSize);
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
         ImVec2 p_min = ImGui::GetWindowPos();
         ImVec2 p_max = ImVec2(p_min.x + ImGui::GetWindowWidth(), p_min.y + ImGui::GetWindowHeight());
         float rounding = 18.0f * scale;
 
+        draw->PushClipRect(ImVec2(p_min.x - 2.0f, p_min.y - 2.0f), ImVec2(p_max.x + 2.0f, p_max.y + 2.0f), false);
         DrawBackdropUnderlay(draw, s.backdrop, display_w, display_h, p_min, p_max, rounding, kColGlassModal);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * scale, 12.0f * scale));
@@ -375,6 +477,24 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             // Title Text
             draw->AddText(ImVec2(logo_center.x + 16.0f * scale, header_min.y + (header_h - font_h) * 0.5f), kColTextPrimary, u8"时之执政-伊斯塔露");
 
+            // Subtle right-side close button
+            float close_sz = 26.0f * scale;
+            ImVec2 close_min(header_max.x - 14.0f * scale - close_sz, header_min.y + (header_h - close_sz) * 0.5f);
+            ImRect close_bb(close_min, ImVec2(close_min.x + close_sz, close_min.y + close_sz));
+            ImGuiID close_id = ImGui::GetID("##MenuCloseBtn");
+            bool close_hov = false, close_held = false;
+            if (ImGui::ButtonBehavior(close_bb, close_id, &close_hov, &close_held)) {
+                menu_open = false;
+            }
+            if (close_hov) {
+                draw->AddRectFilled(close_bb.Min, close_bb.Max, kColCardBgHover, 6.0f * scale);
+            }
+            ImVec2 cc = close_bb.GetCenter();
+            float cr = 4.5f * scale;
+            ImU32 close_col = close_hov ? kColTextPrimary : kColTextMuted;
+            draw->AddLine(ImVec2(cc.x - cr, cc.y - cr), ImVec2(cc.x + cr, cc.y + cr), close_col, 1.4f * scale);
+            draw->AddLine(ImVec2(cc.x + cr, cc.y - cr), ImVec2(cc.x - cr, cc.y + cr), close_col, 1.4f * scale);
+
             ImGui::SetCursorScreenPos(ImVec2(p_min.x + 18.0f * scale, header_max.y + 14.0f * scale));
         }
 
@@ -385,14 +505,13 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             ImVec2 c_min = ImGui::GetCursorScreenPos();
             ImVec2 c_max(c_min.x + card_w, c_min.y + card_h);
             draw->AddRectFilled(c_min, c_max, kColCardBg, 12.0f * scale);
-            draw->AddRect(c_min, c_max, kColBorderSubtle, 12.0f * scale, 0, 1.0f);
+            draw->AddRect(c_min, c_max, ps.card_border, 12.0f * scale, 0, 1.0f);
 
-            float btn_w1 = 84.0f * scale;
-            float btn_w2 = btn_w1;
+            float btn_w = 92.0f * scale;
             float btn_h  = 32.0f * scale;
             float btns_right = c_max.x - 14.0f * scale;
             float btn_y = c_min.y + (card_h - btn_h) * 0.5f;
-            float text_max_x = btns_right - btn_w2 - 8.0f * scale - btn_w1 - 12.0f * scale;
+            float text_max_x = btns_right - btn_w - 14.0f * scale;
 
             // Phase Title (大白话极简文案)
             const char* title_text = (s.phase == UiPhase::Active)     ? u8"剧情极速加速中" :
@@ -401,13 +520,16 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                                      (s.phase == UiPhase::Confirming) ? u8"对话状态重验中" :
                                      (s.phase == UiPhase::Restoring)  ? u8"恢复基准原速中" :
                                      (s.phase == UiPhase::Starting)   ? u8"系统初始化就绪" :
+                                     (s.phase == UiPhase::Fault)      ? u8"组件异常，已停止控制" :
                                                                         u8"状态待确认";
             float line1_y = c_min.y + 14.0f * scale;
             ImVec2 dot_pos(c_min.x + 16.0f * scale, line1_y + font_h * 0.5f);
-            ImU32 dot_col = (s.phase == UiPhase::Active) ? kColBlueAccent : kColTextDim;
-            draw->AddCircleFilled(dot_pos, 3.5f * scale, dot_col, 12);
-            if (s.phase == UiPhase::Active) {
-                draw->AddCircleFilled(dot_pos, 6.0f * scale, kColBlueGlow, 12);
+            draw->AddCircleFilled(dot_pos, 3.5f * scale, ps.accent, 12);
+            if (ps.has_halo) {
+                float wave = ps.pulse ? PulseWave() : 0.5f;
+                int halo_a = (int)std::round(96.0f * (0.76f + 0.24f * wave));
+                float halo_r = (6.0f + (ps.pulse ? 1.0f * wave : 0.0f)) * scale;
+                draw->AddCircleFilled(dot_pos, halo_r, WithAlpha(ps.accent, halo_a), 12);
             }
 
             ImVec4 clip_rect(c_min.x + 28.0f * scale, c_min.y, text_max_x, c_max.y);
@@ -415,36 +537,35 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
 
             // Line 2: Reason text (极简大白话)
             const char* hint_text = (s.reason[0] != 0) ? s.reason :
-                                    (s.phase == UiPhase::Active) ? u8"对话加速进行中 · 按 F10 紧急停机" :
-                                    (s.phase == UiPhase::Paused) ? u8"点击启用开始加速 · 按 F10 紧急停机" :
+                                    (s.phase == UiPhase::Active) ? u8"对话加速进行中 · 按 F10 停止并恢复原速" :
+                                    (s.phase == UiPhase::Paused) ? u8"点击启用开始加速 · 按 F10 仅用于停止" :
                                     u8"离开对话保持原速，进入对话自动加速";
             float line2_y = line1_y + font_h + 8.0f * scale;
             draw->AddText(nullptr, 0.0f, ImVec2(c_min.x + 28.0f * scale, line2_y), kColTextMuted, hint_text, nullptr, 0.0f, &clip_rect);
 
-            // Stop F10 button
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,6.0f * scale);
-            ImGui::SetCursorScreenPos(ImVec2(btns_right - btn_w2, btn_y));
-            if (BoxedButton(u8"停机 F10", ImVec2(btn_w2, btn_h))) {
-                if (emit) emit(UiCommand::Emergency, 0);
-            }
-
-            // Run / Pause button
-            ImGui::SetCursorScreenPos(ImVec2(btns_right - btn_w2 - 8.0f * scale - btn_w1, btn_y));
+            // Merged Start / Stop button
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f * scale);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::SetCursorScreenPos(ImVec2(btns_right - btn_w, btn_y));
             bool is_on = s.enabled;
             if (is_on) {
                 ImGui::PushStyleColor(ImGuiCol_Button, kColBlueAccent);
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(95, 180, 255, 255));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(70, 156, 240, 255));
+                ImGui::PushStyleColor(ImGuiCol_Border, kColBlueAccent);
                 ImGui::PushStyleColor(ImGuiCol_Text, kColDarkText);
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 20));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 255, 255, 36));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 255, 255, 48));
+                ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 255, 255, 34));
                 ImGui::PushStyleColor(ImGuiCol_Text, kColTextPrimary);
             }
-            if (BoxedButton(is_on ? u8"暂停" : u8"启用", ImVec2(btn_w1, btn_h))) {
+            if (BoxedButton(is_on ? u8"停止" : u8"启用", ImVec2(btn_w, btn_h))) {
                 if (emit) emit(UiCommand::Enabled, is_on ? 0 : 1);
             }
-            ImGui::PopStyleColor(3);
-            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(5);
+            ImGui::PopStyleVar(2);
 
             ImGui::SetCursorScreenPos(ImVec2(p_min.x + 18.0f * scale, c_max.y + 12.0f * scale));
         }
@@ -452,13 +573,14 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
         // ================= Card 2: 4-Step Multiplier & Discrete Slider =================
         {
             float card_w = modal_w - 36.0f * scale;
-            const float card_h = 124.0f * scale;
+            const float card_h = 116.0f * scale;
             ImVec2 c_min = ImGui::GetCursorScreenPos();
             ImVec2 c_max(c_min.x + card_w, c_min.y + card_h);
             draw->AddRectFilled(c_min, c_max, kColCardBg, 12.0f * scale);
             draw->AddRect(c_min, c_max, kColBorderSubtle, 12.0f * scale, 0, 1.0f);
 
-            draw->AddText(ImVec2(c_min.x + 14.0f * scale, c_min.y + 14.0f * scale), kColTextPrimary, u8"剧情推进倍率 (4 档步进)");
+            float row_top_y = c_min.y + 13.0f * scale;
+            draw->AddText(ImVec2(c_min.x + 14.0f * scale, row_top_y), kColTextPrimary, u8"剧情推进倍率 (4 档步进)");
 
             char actual_str[32];
             if (s.actual_known) {
@@ -469,22 +591,28 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
 
             ImVec2 act_sz = ImGui::CalcTextSize(actual_str);
             float readout_right = c_max.x - 14.0f * scale;
-            ImVec2 pill_min(readout_right - act_sz.x - 12.0f * scale, c_min.y + 12.0f * scale);
-            ImVec2 pill_max(readout_right, pill_min.y + act_sz.y + 4.0f * scale);
-            draw->AddRectFilled(pill_min, pill_max, IM_COL32(255, 255, 255, 15), 4.0f * scale);
-            DrawBoxedText(draw,pill_min,pill_max,(s.speed_active&&s.actual_known)?kColBlueAccent:kColTextMuted,actual_str);
+            bool act_lit = s.speed_active && s.actual_known;
+            ImVec2 pill_min(readout_right - act_sz.x - 14.0f * scale, row_top_y - 2.0f * scale);
+            ImVec2 pill_max(readout_right, row_top_y + font_h + 2.0f * scale);
+            draw->AddRectFilled(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 24) : IM_COL32(255, 255, 255, 18), 4.0f * scale);
+            draw->AddRect(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 86) : IM_COL32(255, 255, 255, 32), 4.0f * scale, 0, 1.0f);
+            DrawBoxedText(draw,pill_min,pill_max,act_lit?kColBlueAccent:kColTextMuted,actual_str);
 
             char target_str[16];
             std::snprintf(target_str, sizeof(target_str), u8"%u×", s.target);
             ImVec2 tgt_sz = ImGui::CalcTextSize(target_str);
-            draw->AddText(ImVec2(pill_min.x - tgt_sz.x - 10.0f * scale, c_min.y + 12.0f * scale), kColBlueAccent, target_str);
+            const char* tgt_prefix = u8"目标 ";
+            ImVec2 pre_sz = ImGui::CalcTextSize(tgt_prefix);
+            float tgt_x = pill_min.x - tgt_sz.x - 10.0f * scale;
+            draw->AddText(ImVec2(tgt_x, row_top_y), kColBlueAccent, target_str);
+            draw->AddText(ImVec2(tgt_x - pre_sz.x, row_top_y), kColTextMuted, tgt_prefix);
 
             // Interactive Slider Widget (16px track, 20px white knob, 4x stardust)
             // Shared alignment baseline for slider, notches, and step labels
             const float thumb_r = 10.0f * scale;
             const float x_start = c_min.x + 18.0f * scale + thumb_r;
             const float x_end   = c_max.x - 18.0f * scale - thumb_r;
-            const float track_y_mid = c_min.y + 54.0f * scale;
+            const float track_y_mid = c_min.y + 56.0f * scale;
             const float step_w  = (x_end - x_start) / 3.0f;
 
             // Interactive Slider Widget (16px track, 20px white knob, strictly within card)
@@ -497,13 +625,12 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             }
 
             // 4 discrete step labels [1×] [2×] [3×] [4×] sharing exact notch centers cx
-            const float notch_y = c_min.y + 82.0f * scale;
+            const float notch_y = c_min.y + 76.0f * scale;
             const char* step_labels[4] = { "1×", "2×", "3×", "4×" };
 
             for (int i = 0; i < 4; ++i) {
                 float cx = x_start + i * step_w;
                 bool is_sel = (s.target == (unsigned)(i + 1));
-                ImU32 g_col = is_sel ? kColBlueAccent : kColTextMuted;
 
                 ImRect nbb(ImVec2(cx - 20.0f * scale, notch_y - 4.0f * scale),
                            ImVec2(cx + 20.0f * scale, notch_y + 24.0f * scale));
@@ -512,9 +639,14 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                 if (ImGui::ButtonBehavior(nbb, nid, &nhov, &nheld) && emit) {
                     emit(UiCommand::Multiplier, i + 1);
                 }
+                ImU32 g_col = is_sel ? kColBlueAccent : (nhov ? kColTextPrimary : kColTextMuted);
 
                 ImVec2 tsz = ImGui::CalcTextSize(step_labels[i]);
                 draw->AddText(ImVec2(cx - tsz.x * 0.5f, notch_y + 4.0f * scale), g_col, step_labels[i]);
+                if (is_sel) {
+                    float ul_y = notch_y + 4.0f * scale + font_h + 2.0f * scale;
+                    draw->AddLine(ImVec2(cx - 8.0f * scale, ul_y), ImVec2(cx + 8.0f * scale, ul_y), kColBlueAccent, 2.0f * scale);
+                }
             }
 
             ImGui::SetCursorScreenPos(ImVec2(p_min.x + 18.0f * scale, c_max.y + 12.0f * scale));
@@ -544,11 +676,19 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             for (int i = 0; i < 3; ++i) {
                 ImVec2 c_min = ImGui::GetCursorScreenPos();
                 ImVec2 c_max(c_min.x + card_w, c_min.y + cap_card_h);
-                draw->AddRectFilled(c_min, c_max, kColCardBg, 8.0f * scale);
-                draw->AddRect(c_min, c_max, kColBorderSubtle, 8.0f * scale, 0, 1.0f);
+                ImRect card_bb(c_min, c_max);
+                ImGui::ItemSize(card_bb, 0.0f);
+                ImGuiID row_id = ImGui::GetID(rows[i].switch_id);
+                bool row_hov = false, row_held = false;
+                bool row_pressed = ImGui::ItemAdd(card_bb, row_id) && ImGui::ButtonBehavior(card_bb, row_id, &row_hov, &row_held);
+                float row_ht = AnimateFloat(row_id + 10u, row_hov ? 1.0f : 0.0f, 16.0f);
+
+                draw->AddRectFilled(c_min, c_max, LerpColor(kColCardBg, kColCardBgHover, row_ht), 8.0f * scale);
+                draw->AddRect(c_min, c_max, LerpColor(kColBorderSubtle, IM_COL32(255, 255, 255, 58), row_ht), 8.0f * scale, 0, 1.0f);
 
                 float text_left = c_min.x + 14.0f * scale;
                 float line1_y = c_min.y + 8.0f * scale;
+                float line1_mid = line1_y + font_h * 0.5f;
 
                 draw->AddText(ImVec2(text_left, line1_y), kColTextPrimary, rows[i].title);
                 float tw = ImGui::CalcTextSize(rows[i].title).x;
@@ -556,24 +696,28 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
                 const char* tag_str = (!rows[i].configured) ? u8"关闭" :
                                       (rows[i].active)      ? u8"生效中" : u8"待机";
                 ImU32 tag_bg = (!rows[i].configured) ? IM_COL32(255, 255, 255, 10) :
-                               (rows[i].active)      ? kColBlueDim : IM_COL32(255, 255, 255, 15);
+                               (rows[i].active)      ? kColBlueDim : IM_COL32(255, 255, 255, 18);
                 ImU32 tag_fg = (!rows[i].configured) ? kColTextDim :
                                (rows[i].active)      ? kColBlueAccent : kColTextMuted;
+                ImU32 tag_bd = (!rows[i].configured) ? IM_COL32(255, 255, 255, 24) :
+                               (rows[i].active)      ? IM_COL32(80, 170, 255, 92) : IM_COL32(255, 255, 255, 36);
 
                 ImVec2 tag_sz = ImGui::CalcTextSize(tag_str);
-                ImVec2 tg_min(text_left + tw + 8.0f * scale, line1_y);
-                ImVec2 tg_max(tg_min.x + tag_sz.x + 8.0f * scale, tg_min.y + tag_sz.y + 2.0f * scale);
+                float tag_h = tag_sz.y + 2.0f * scale;
+                ImVec2 tg_min(text_left + tw + 8.0f * scale, line1_mid - tag_h * 0.5f);
+                ImVec2 tg_max(tg_min.x + tag_sz.x + 10.0f * scale, line1_mid + tag_h * 0.5f);
                 draw->AddRectFilled(tg_min, tg_max, tag_bg, 3.0f * scale);
+                draw->AddRect(tg_min, tg_max, tag_bd, 3.0f * scale, 0, 1.0f);
                 DrawBoxedText(draw,tg_min,tg_max,tag_fg,tag_str);
 
                 float line2_y = line1_y + font_h + 4.0f * scale;
                 ImVec4 cap_clip(text_left, line2_y, c_max.x - sw_w - 20.0f * scale, c_max.y);
                 draw->AddText(nullptr, 0.0f, ImVec2(text_left, line2_y), kColTextMuted, rows[i].desc, nullptr, 0.0f, &cap_clip);
 
-                ImGui::SetCursorScreenPos(ImVec2(c_max.x - sw_w - 14.0f * scale, c_min.y + (cap_card_h - sw_h) * 0.5f));
-                bool cur_cfg = rows[i].configured;
-                if (DrawCleanSwitch(rows[i].switch_id, &cur_cfg, scale)) {
-                    if (emit) emit(rows[i].cmd, cur_cfg ? 1 : 0);
+                ImVec2 sw_min(c_max.x - sw_w - 14.0f * scale, c_min.y + (cap_card_h - sw_h) * 0.5f);
+                DrawSwitchVisual(draw, row_id + 1u, ImRect(sw_min, ImVec2(sw_min.x + sw_w, sw_min.y + sw_h)), rows[i].configured, row_hov, scale);
+                if (row_pressed && emit) {
+                    emit(rows[i].cmd, rows[i].configured ? 0 : 1);
                 }
 
                 ImGui::SetCursorScreenPos(ImVec2(p_min.x + 18.0f * scale, c_max.y + 8.0f * scale));
@@ -586,13 +730,29 @@ static void DrawMenuModal(const UiState& s, bool& menu_open, float scale, UiEmit
             ImVec2 f_max(p_max.x, f_min.y + 36.0f * scale);
             draw->AddLine(f_min, ImVec2(f_max.x, f_min.y), kColBorderSubtle, 1.0f);
 
-            draw->AddText(ImVec2(f_min.x + 18.0f * scale, f_min.y + (36.0f * scale - font_h) * 0.5f), kColTextMuted,
-                          u8"按 Insert 打开或关闭面板      按 F10 紧急停机");
+            float fx = f_min.x + 18.0f * scale;
+            float fy = f_min.y + (36.0f * scale - font_h) * 0.5f;
+            float ky = fy - 2.0f * scale;
+            const float gap = 5.0f * scale;
+            ImU32 cap_bg = IM_COL32(255, 255, 255, 18);
+            ImU32 cap_bd = IM_COL32(255, 255, 255, 34);
+            auto push_text = [&](const char* txt) {
+                draw->AddText(ImVec2(fx, fy), kColTextMuted, txt);
+                fx += ImGui::CalcTextSize(txt).x;
+            };
+            push_text(u8"按");
+            fx += gap;
+            fx += DrawKeycap(draw, ImVec2(fx, ky), "Insert", scale, kColTextPrimary, cap_bg, cap_bd) + gap;
+            push_text(u8"开关面板    按");
+            fx += gap;
+            fx += DrawKeycap(draw, ImVec2(fx, ky), "F10", scale, kColStopText, kColStopFill, kColStopBorder) + gap;
+            push_text(u8"仅停止并恢复原速");
 
             ImGui::SetCursorScreenPos(ImVec2(p_min.x, f_max.y));
         }
 
         ImGui::PopStyleVar();
+        draw->PopClipRect();
     }
     ImGui::End();
 }

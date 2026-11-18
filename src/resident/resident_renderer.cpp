@@ -130,10 +130,16 @@ static void Initialize(IDXGISwapChain* chain,HWND window) {
     InstallInput(window);ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=io.LogFilename=nullptr;
     io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard|ImGuiConfigFlags_NoMouseCursorChange;ImGui::StyleColorsDark();
     wchar_t windows[MAX_PATH];GetWindowsDirectoryW(windows,MAX_PATH);bool loaded=false;
+    DXGI_SWAP_CHAIN_DESC swap_desc{};
+    float init_scale=1.0f;
+    if(SUCCEEDED(chain->GetDesc(&swap_desc))&&swap_desc.BufferDesc.Width&&swap_desc.BufferDesc.Height) {
+        init_scale=std::clamp(std::min(swap_desc.BufferDesc.Width/1920.f,swap_desc.BufferDesc.Height/1080.f),.65f,2.f);
+    }
+    ImFontConfig font_config;font_config.OversampleH=2;font_config.OversampleV=2;font_config.PixelSnapH=true;
     for(auto name:{L"msyh.ttc",L"simhei.ttf",L"msyh.ttf"}) {
         auto path=std::wstring(windows)+L"\\Fonts\\"+name;char utf8[2048];
         if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES&&WideCharToMultiByte(CP_UTF8,0,path.c_str(),-1,utf8,2048,nullptr,nullptr)&&
-           io.Fonts->AddFontFromFileTTF(utf8,20.f,nullptr,ResidentGlyphs)){loaded=true;break;}
+           io.Fonts->AddFontFromFileTTF(utf8,16.f*init_scale,&font_config,ResidentGlyphs)){loaded=true;break;}
     }
     if(!loaded)throw HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
     platform=ImGui_ImplWin32_Init(window);if(!platform)throw E_FAIL;
