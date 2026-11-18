@@ -90,13 +90,13 @@ static void MenuFadeProbe() {
     menu=frame(false,.5f);
     Check(menu->Active&&(menu->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs);
     Check((menu->Flags&ImGuiWindowFlags_NoFocusOnAppearing)!=0&&menu->DrawList->VtxBuffer.Size==colors.Size);
-    bool faded=true,backdrop=false,icon=false;
+    bool faded=true,has_backdrop=false,has_icon=false;
     for(int i=0;i<colors.Size;i++) {
         ImU32 expected=(colors[i]&~IM_COL32_A_MASK)|((ImU32)std::round(((colors[i]>>IM_COL32_A_SHIFT)&255)*.5f)<<IM_COL32_A_SHIFT);
         if(menu->DrawList->VtxBuffer[i].col!=expected)faded=false;
     }
-    for(auto& command:menu->DrawList->CmdBuffer){backdrop|=command.GetTexID()==2;icon|=command.GetTexID()==3;}
-    Check(faded&&backdrop&&icon);
+    for(auto& command:menu->DrawList->CmdBuffer){has_backdrop|=command.GetTexID()==2;has_icon|=command.GetTexID()==3;}
+    Check(faded&&has_backdrop&&has_icon);
     menu=frame(false,0);Check(!menu->Active&&ImGui::GetDrawData()->TotalVtxCount>0);
     ImGui::DestroyContext();
 }
