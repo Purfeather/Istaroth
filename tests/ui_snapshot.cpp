@@ -90,7 +90,7 @@ int wmain(int argc,wchar_t** argv) {
                 state.speed_active=state.effects_active=state.advance_active=state.choose_active=state.skip_active=false;
             }
             if(state.dialogue_ready) {
-                if(state.target==1)strcpy_s(state.reason,u8"检测到当前处于对话中，关闭面板后按原速执行已选功能");
+                if(state.target==1)strcpy_s(state.reason,u8"当前处于对话中，关闭面板后按原速执行已选功能");
                 else std::snprintf(state.reason,sizeof(state.reason),u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速",state.target);
             } else strcpy_s(state.reason,state.target==1?u8"当前保持原速；关闭面板后进入对话执行已选功能":u8"当前保持原速；关闭面板后进入对话自动加速");
         }

@@ -58,7 +58,7 @@ UiState GetUiState() {
     }
     else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault) {
         if(copy.dialogue_ready) {
-            if(copy.target==1)strcpy_s(copy.reason,u8"检测到当前处于对话中，关闭面板后按原速执行已选功能");
+            if(copy.target==1)strcpy_s(copy.reason,u8"当前处于对话中，关闭面板后按原速执行已选功能");
             else std::snprintf(copy.reason,sizeof(copy.reason),u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速",copy.target);
         } else strcpy_s(copy.reason,copy.target==1?u8"当前保持原速；关闭面板后进入对话执行已选功能":u8"当前保持原速；关闭面板后进入对话自动加速");
     }
