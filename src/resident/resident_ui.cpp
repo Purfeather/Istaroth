@@ -412,12 +412,45 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
     const float display_h = (s.display_height > 0.0f) ? s.display_height : ImGui::GetIO().DisplaySize.y;
     const PhaseStyle ps = GetPhaseStyle(s);
 
+    const char* title_text = (s.phase == UiPhase::Paused) ? u8"已暂停" :
+        (s.phase == UiPhase::Waiting) ? (s.dialogue_ready ? u8"已启用 · 面板暂挂中" : u8"已启用 · 监听对话中") :
+        (s.phase == UiPhase::Confirming) ? u8"正在校验状态" :
+        (s.phase == UiPhase::Restoring) ? u8"正在恢复原速" :
+        (s.phase == UiPhase::Starting) ? u8"正在初始化" :
+        (s.phase == UiPhase::Fault) ? u8"组件异常 · 已停止" : u8"状态待确认";
+    const char* hint_text = s.reason[0] ? s.reason :
+        (s.phase == UiPhase::Paused) ? u8"当前保持 1× 原速，点击「启用」开始" :
+        u8"当前保持原速；关闭面板后进入对话自动加速";
+    const float font_size = 16.0f * scale;
+    float hint_height = ImGui::GetFont()->CalcTextSizeA(font_size, FLT_MAX, 316.0f * scale, hint_text).y;
+    const float master_height = ImMax(72.0f * scale, font_size + hint_height + 36.0f * scale);
+    // Header, card gaps, multiplier card, three capability cards, and footer.
+    const float full_height = (46+14+12+116+12+3*34+4+36)*scale + 6.0f*font_size + master_height + ImGui::GetStyle().WindowPadding.y;
+    const float full_w = 500.0f * scale;
+    const float full_x = (display_w - full_w) * 0.5f;
+    const float full_y = display_h * 0.14f;
+    float hud_w = 293.0f * scale;
+    float hud_x = (display_w - hud_w) * 0.5f;
+    float hud_bottom = (16.0f + 38.0f) * scale;
+    if (ImGuiWindow* hud = ImGui::FindWindowByName("##IstarothHudCapsule")) {
+        hud_w = hud->Size.x;
+        hud_x = hud->Pos.x;
+        hud_bottom = hud->Pos.y + hud->Size.y;
+    }
+    const float min_zoom = ImClamp(hud_w / full_w, 0.25f, 1.0f);
+    const float collapsed_x = hud_x + (hud_w - full_w * min_zoom) * 0.5f;
+    const float collapsed_y = hud_bottom + 8.0f * scale;
+    const float zoom = min_zoom + (1.0f - min_zoom) * opacity;
+    const float modal_x = collapsed_x + (full_x - collapsed_x) * opacity;
+    const float modal_y = collapsed_y + (full_y - collapsed_y) * opacity;
+    scale *= zoom;
     const float modal_w = 500.0f * scale; // 保持既定基准尺寸
-    const float modal_x = (display_w - modal_w) * 0.5f;
-    const float modal_y = display_h * 0.14f;
 
     ImGui::SetNextWindowPos(ImVec2(modal_x, modal_y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(modal_w, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(modal_w, full_height * zoom), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1, 1));
+    ImVec2 padding = ImGui::GetStyle().WindowPadding;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding.x*zoom, padding.y*zoom));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
                              ImGuiWindowFlags_NoMove |
@@ -461,7 +494,7 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
             ImRect close_bb(close_min, ImVec2(close_min.x + close_sz, close_min.y + close_sz));
             ImGuiID close_id = ImGui::GetID("##MenuCloseBtn");
             bool close_hov = false, close_held = false;
-            if (ImGui::ButtonBehavior(close_bb, close_id, &close_hov, &close_held)) {
+            if (ImGui::ItemAdd(close_bb, close_id) && ImGui::ButtonBehavior(close_bb, close_id, &close_hov, &close_held)) {
                 menu_open = false;
             }
             if (close_hov) {
@@ -479,19 +512,8 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
         // ================= Card 1: Master Control =================
         {
             float card_w = modal_w - 36.0f * scale;
-            const char* title_text = (s.phase == UiPhase::Paused)     ? u8"已暂停" :
-                                     (s.phase == UiPhase::Waiting)    ? (s.dialogue_ready ? u8"已启用 · 面板暂挂中" : u8"已启用 · 监听对话中") :
-                                     (s.phase == UiPhase::Confirming) ? u8"正在校验状态" :
-                                     (s.phase == UiPhase::Restoring)  ? u8"正在恢复原速" :
-                                     (s.phase == UiPhase::Starting)   ? u8"正在初始化" :
-                                     (s.phase == UiPhase::Fault)      ? u8"组件异常 · 已停止" :
-                                                                        u8"状态待确认";
-            const char* hint_text = (s.reason[0] != 0) ? s.reason :
-                                    (s.phase == UiPhase::Paused) ? u8"当前保持 1× 原速，点击「启用」开始" :
-                                    u8"当前保持原速；关闭面板后进入对话自动加速";
             const float text_width = card_w - 148.0f * scale;
-            float hint_height = ImGui::CalcTextSize(hint_text, nullptr, false, text_width).y;
-            const float card_h = ImMax(72.0f * scale, font_h + hint_height + 36.0f * scale);
+            const float card_h = master_height * zoom;
             ImVec2 c_min = ImGui::GetCursorScreenPos();
             ImVec2 c_max(c_min.x + card_w, c_min.y + card_h);
             draw->AddRectFilled(c_min, c_max, kColCardBg, 12.0f * scale);
@@ -554,10 +576,8 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
             float row_top_y = c_min.y + 13.0f * scale;
             draw->AddText(ImVec2(c_min.x + 14.0f * scale, row_top_y), kColTextPrimary, u8"对话加速倍率");
 
-            char rule_str[64];
-            if (!s.enabled) std::snprintf(rule_str, sizeof(rule_str), u8"当前：1× 原速");
-            else if (s.target == 1) std::snprintf(rule_str, sizeof(rule_str), u8"原速执行 · 面板暂挂");
-            else std::snprintf(rule_str, sizeof(rule_str), u8"目标 %u× · 面板暂挂 1×", s.target);
+            char rule_str[32];
+            std::snprintf(rule_str, sizeof(rule_str), u8"目标 %u×", s.target);
 
             ImVec2 act_sz = ImGui::CalcTextSize(rule_str);
             float readout_right = c_max.x - 14.0f * scale;
@@ -567,12 +587,6 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
             draw->AddRectFilled(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 24) : IM_COL32(255, 255, 255, 18), 4.0f * scale);
             draw->AddRect(pill_min, pill_max, act_lit ? IM_COL32(80, 170, 255, 86) : IM_COL32(255, 255, 255, 32), 4.0f * scale, 0, 1.0f);
             DrawBoxedText(draw,pill_min,pill_max,act_lit?kColBlueAccent:kColTextMuted,rule_str);
-
-            if (!s.enabled) {
-                char target_str[32];std::snprintf(target_str, sizeof(target_str), u8"目标 %u×", s.target);
-                ImVec2 tgt_sz = ImGui::CalcTextSize(target_str);
-                draw->AddText(ImVec2(pill_min.x - tgt_sz.x - 10.0f * scale, row_top_y), kColTextMuted, target_str);
-            }
 
             // Interactive Slider Widget (16px track, 20px white knob, 4x stardust)
             // Shared alignment baseline for slider, notches, and step labels
@@ -727,6 +741,7 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
         }
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 // -----------------------------------------------------------------------------

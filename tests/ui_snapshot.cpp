@@ -58,6 +58,8 @@ int wmain(int argc,wchar_t** argv) {
         state.display_width=(float)width;state.display_height=(float)height;state.phase=istaroth::UiPhase::Paused;
         strcpy_s(state.reason,u8"当前保持 1× 原速，点击「启用」开始");
         std::wstring mode=argv[3];bool open=true;
+        float menu_opacity=-1.f;
+        if(mode==L"opening"||mode==L"closing"){open=mode==L"opening";mode=L"paused";menu_opacity=.5f;}
         if(mode.rfind(L"hud-",0)==0){open=false;mode.erase(0,4);}
         if(mode==L"active"||mode==L"auto1") {
             state.phase=istaroth::UiPhase::Active;state.enabled=state.dialogue=state.effects_active=true;
@@ -96,7 +98,7 @@ int wmain(int argc,wchar_t** argv) {
         }
         for(unsigned frame=0;frame<3;frame++) {
             ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
-            istaroth::DrawResidentUi(state,open,scale,nullptr);
+            istaroth::DrawResidentUi(state,open,scale,nullptr,menu_opacity);
             ImGui::Render();auto rt=target.Get();context->OMSetRenderTargets(1,&rt,nullptr);
             const float clear[4]={.08f,.15f,.24f,1};context->ClearRenderTargetView(rt,clear);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

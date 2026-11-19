@@ -86,17 +86,23 @@ static void MenuFadeProbe() {
         return ImGui::FindWindowByName("##IstarothMenuModal");
     };
     frame(true,1);frame(true,1);auto menu=frame(true,1);
-    ImVector<ImU32> colors;for(auto& vertex:menu->DrawList->VtxBuffer)colors.push_back(vertex.col);
+    ImVec2 full_pos=menu->Pos,full_size=menu->Size;
+    auto capsule=ImGui::FindWindowByName("##IstarothHudCapsule");
+    float min_zoom=ImClamp(capsule->Size.x/full_size.x,.25f,1.f);
+    float half_zoom=min_zoom+(1.f-min_zoom)*.5f;
+    ImVec2 collapsed_pos(capsule->Pos.x+(capsule->Size.x-full_size.x*min_zoom)*.5f,capsule->Pos.y+capsule->Size.y+8.f);
     menu=frame(false,.5f);
     Check(menu->Active&&(menu->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs);
-    Check((menu->Flags&ImGuiWindowFlags_NoFocusOnAppearing)!=0&&menu->DrawList->VtxBuffer.Size==colors.Size);
+    Check((menu->Flags&ImGuiWindowFlags_NoFocusOnAppearing)!=0);
+    Check(std::fabs(menu->Size.x-full_size.x*half_zoom)<=1&&std::fabs(menu->Size.y-full_size.y*half_zoom)<=1);
+    Check(std::fabs(menu->Pos.x-(collapsed_pos.x+(full_pos.x-collapsed_pos.x)*.5f))<=1&&std::fabs(menu->Pos.y-(collapsed_pos.y+(full_pos.y-collapsed_pos.y)*.5f))<=1);
     bool faded=true,has_backdrop=false,has_icon=false;
-    for(int i=0;i<colors.Size;i++) {
-        ImU32 expected=(colors[i]&~IM_COL32_A_MASK)|((ImU32)std::round(((colors[i]>>IM_COL32_A_SHIFT)&255)*.5f)<<IM_COL32_A_SHIFT);
-        if(menu->DrawList->VtxBuffer[i].col!=expected)faded=false;
-    }
+    unsigned max_alpha=0;
+    for(auto& vertex:menu->DrawList->VtxBuffer){unsigned alpha=vertex.col>>IM_COL32_A_SHIFT;if(alpha>128)faded=false;max_alpha=(std::max)(max_alpha,alpha);}
     for(auto& command:menu->DrawList->CmdBuffer){has_backdrop|=command.GetTexID()==2;has_icon|=command.GetTexID()==3;}
-    Check(faded&&has_backdrop&&has_icon);
+    Check(faded&&max_alpha==128&&has_backdrop&&has_icon);
+    menu=frame(false,.02f);
+    Check(std::fabs(menu->Size.x-capsule->Size.x)<=6&&menu->Pos.y>=capsule->Pos.y+capsule->Size.y+7.f);
     menu=frame(false,0);Check(!menu->Active&&ImGui::GetDrawData()->TotalVtxCount>0);
     auto hud_frame=[&](){frame(false,0);return ImGui::FindWindowByName("##IstarothHudCapsule");};
     auto colored=[](ImGuiWindow* hud,ImU32 rgb,bool speed_only=false) {
@@ -180,10 +186,12 @@ int main() {
     }
     {
         // Route mouse messages through the renderer, into only this hidden host.
-        auto click=[&](ImVec2 p) {
+        menu_opacity=1;Render(chain.Get(),0);
+        auto click=[&](ImVec2 p,unsigned held_frames=0) {
             LPARAM point=MAKELPARAM((int)p.x,(int)p.y);
             SendMessageW(GameWindow,WM_MOUSEMOVE,0,point);Render(chain.Get(),0);
             SendMessageW(GameWindow,WM_LBUTTONDOWN,MK_LBUTTON,point);Render(chain.Get(),0);
+            for(unsigned i=0;i<held_frames;i++)Render(chain.Get(),0);
             SendMessageW(GameWindow,WM_LBUTTONUP,0,point);Render(chain.Get(),0);Pump();
         };
         auto menu=ImGui::FindWindowByName("##IstarothMenuModal");Check(menu!=nullptr);
@@ -193,7 +201,7 @@ int main() {
         click(toggle);Check(commands==before+2&&last_command==UiCommand::Enabled&&last_value==0&&!fixture_enabled);
         SendMessageW(GameWindow,WM_KEYDOWN,VK_F10,0);SendMessageW(GameWindow,WM_KEYDOWN,VK_F10,0);
         Check(commands==before+4&&last_command==UiCommand::Emergency&&last_value==0&&!fixture_enabled);
-        click(ImVec2(menu->Pos.x+menu->Size.x-27.f*scale,menu->Pos.y+23.f*scale));
+        click(ImVec2(menu->Pos.x+menu->Size.x-27.f*scale,menu->Pos.y+23.f*scale),12);
         Check(!MenuVisible&&cursor_count==-2&&clip.left==10&&cursor_position.x==15&&input_count==0);
         SetMenuVisible(true);Pump();Render(chain.Get(),0);Check(MenuVisible);
     }
