@@ -166,6 +166,25 @@ int main() {
     ComPtr<ID3D11ComputeShader> restored_compute;host_context->CSGetShader(&restored_compute,nullptr,nullptr);Check(restored_compute.Get()==compute.Get());
     D3D11_PRIMITIVE_TOPOLOGY topology{};host_context->IAGetPrimitiveTopology(&topology);Check(topology==D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
     UINT viewport_count=1;D3D11_VIEWPORT restored_viewport{};host_context->RSGetViewports(&viewport_count,&restored_viewport);Check(restored_viewport.TopLeftX==3&&restored_viewport.Height==110);
+    {
+        // A host predicate must be suspended for UI draws and restored unchanged.
+        D3D11_QUERY_DESC query{D3D11_QUERY_OCCLUSION_PREDICATE,0};
+        ComPtr<ID3D11Predicate> predicate;
+        Check(SUCCEEDED(host_device->CreatePredicate(&query,&predicate)));
+        for(BOOL expected:{FALSE,TRUE}) {
+            host_context->SetPredication(predicate.Get(),expected);
+            {
+                Pipeline ui_pipeline(host_context.Get());
+                ComPtr<ID3D11Predicate> bound;
+                host_context->GetPredication(&bound,nullptr);
+                Check(!bound);
+            }
+            ComPtr<ID3D11Predicate> restored_predicate;BOOL value=FALSE;
+            host_context->GetPredication(&restored_predicate,&value);
+            Check(restored_predicate.Get()==predicate.Get()&&value==expected);
+        }
+        host_context->SetPredication(nullptr,FALSE);
+    }
     unsigned previous_ticks=ticks;Check(SUCCEEDED(chain->Present(0,DXGI_PRESENT_TEST)));Check(ticks==previous_ticks);
     SendMessageW(GameWindow,WM_KEYDOWN,'A',0);Check(original_keys==1);
     SetMenuVisible(true);Pump();Check(MenuVisible&&cursor_count>=0&&simulated_foreground==GameWindow);Check(activation_calls==0);
