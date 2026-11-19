@@ -1,6 +1,6 @@
 # Istaroth · 伊斯塔露
 
-Windows x64 原神剧情辅助工具。当前正式版：[**v0.2.0**](https://github.com/Purfeather/Istaroth/releases/tag/v0.2.0)。
+Windows x64 原神剧情辅助工具。当前正式版为 [**v0.3.0**](https://github.com/Purfeather/Istaroth/releases/tag/v0.3.0)。
 
 `main` 保留正式版源码；[develop](https://github.com/Purfeather/Istaroth/tree/develop) 用于保存开发中的修改，可能尚未完成全部测试。使用正式版本请前往 [Release](https://github.com/Purfeather/Istaroth/releases)；开发流程见 [开发分支说明](docs/DEVELOPMENT.md)。
 
@@ -12,20 +12,21 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 - 自动推进、自动选择首项、跳过对话冷却可分别开关。
 - 游戏内菜单与 HUD，加载器确认初始化后自动退出，无外部常驻控制进程。
  - 首次对话出现前的纯过场可能不加速；隐藏对话 UI 的常规剧情过场已实测支持。游戏自带跳过按钮的部分过场动画不在此功能范围内。
-- 0.2.0 在 DX11 游戏帧内绘制菜单与 HUD，打开菜单时保留游戏窗口焦点；独占全屏兼容性待实机验收。支持毛玻璃背景与 sRGB 配色修正，不支持任务点传送。
+- 菜单与 HUD 在 DX11 游戏帧内绘制，支持毛玻璃背景与 sRGB 配色修正。独占全屏兼容性待实机验收。
+- 黑屏旁白的“点击后继续”仍需手动操作。
  - 仅支持 [兼容指纹](profiles/compatibility.json) 指定的 YuanShen.exe。游戏版本不匹配时将拒绝加载；使用第三方辅助工具可能存在账号与兼容风险，详见 [使用风险声明](docs/DISCLAIMER.md)。
 
 ## 使用
 
 1. 从正式 Release 下载，完整解压到独立文件夹；不要放在原神安装目录或其任何子目录中。保持七个文件同目录，阅读随包的“使用说明.txt”；运行需要管理员权限。
 2. 首次打开“伊斯塔露加载器”，再按平时方式手动启动原神。加载器收到初始化确认后记住路径并退出。
-3. 后续打开加载器会启动已记住的游戏。默认暂停，目标倍率 4×；Insert 打开“时之执政-伊斯塔露”，点击启动。
+3. 后续打开加载器会启动已记住的游戏。默认暂停，目标倍率 4×。按 Insert 打开“时之执政-伊斯塔露”，点击“启用”。
 4. 菜单打开时功能暂挂，鼠标可直接操作；关闭后恢复原来的鼠标状态并重新核验。F10 停止功能。
  5. 如需更新或更换 DLL，请在完全退出游戏后操作。关闭加载器并不代表已卸载游戏内注入组件。
 
 配置与诊断日志保存在程序所在目录。提供排查信息前请注意遮蔽路径、UID 或个人账号信息。
 
-0.2.0 主包为加载器、四个 DLL、LICENSES.txt 和使用说明.txt，共七个文件。首次使用与按键说明也可查看 [使用说明](docs/USAGE.txt)。
+主包为加载器、四个 DLL、LICENSES.txt 和使用说明.txt，共七个文件。首次使用与按键说明也可查看 [使用说明](docs/USAGE.txt)。
 
 遇到问题可单独下载 [伊斯塔露报告工具](https://github.com/Purfeather/Istaroth/releases/download/v0.2.0/Istaroth-ReportTool-v0.1.0-win64.exe)：双击打开，选择 Istaroth 文件夹，点击“导出报告”即可，不需要终端。报告保存到桌面的 `Istaroth-reports`，不会自动上传。`Istaroth.exe --diagnostics` 入口仍可使用。详见 [诊断与显示验证](docs/DIAGNOSTICS.md)。
 
@@ -35,4 +36,4 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 
 源码采用 Apache-2.0（第三方与素材例外见各自声明）。Copyright 2026 Istaroth contributors。
 
-0.2.0 已发布，源码标签对应 `a8ea572`；验证范围见 [发布说明](docs/RELEASE-v0.2.0.md)。历史版本 v0.1.1 的首次启动、路径与配置保存、菜单和鼠标恢复已由用户实机测试通过（见 [验收记录](docs/accepted-v0.1.1.json)），原归档保留用于回退。项目已公开，[构建结果](https://github.com/Purfeather/Istaroth/actions)与[版本归档](https://github.com/Purfeather/Istaroth/releases)以对应页面为准。
+本版改动与验证范围见 [v0.3.0 发布说明](docs/RELEASE-v0.3.0.md)。构建与历史归档见 [GitHub Actions](https://github.com/Purfeather/Istaroth/actions) 和 [Releases](https://github.com/Purfeather/Istaroth/releases)。

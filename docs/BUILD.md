@@ -41,7 +41,7 @@ pwsh -NoProfile -File ./build.ps1
 python tools/package.py --slim ./out-slim
 ```
 
-0.2.0 主包包含 EXE、四个 DLL、LICENSES.txt 和使用说明.txt。说明源文件为 docs/USAGE.txt，打包时转换为带 BOM 的 UTF-8 和 Windows 换行；配置、日志及独立报告工具不进入主包。
+主包包含 EXE、四个 DLL、LICENSES.txt 和使用说明.txt。说明源文件为 docs/USAGE.txt，打包时转换为带 BOM 的 UTF-8 和 Windows 换行。配置与日志按需生成，报告工具单独分发。
 
 ## 独立报告工具
 
