@@ -24,7 +24,8 @@ static uintptr_t gc_entries[8192];
 static BYTE map[0x160];
 __declspec(dllexport) uintptr_t GSTStoryTestMap=(uintptr_t)map;
 static TestType integer_type={0,0,8,0,0}, boolean_type={0,0,2,0,0}, class_type={0,0,18,0,0};
-static TestField fields[2], parent_fields[2], child_fields[2];
+static TestField fields[2], parent_fields[2], child_fields[2], curtain_fields[2];
+static BYTE curtain_definition[128];
 static BYTE root_definition[128],parent_definition[128],child_definition[128];
 static Managed child,script,negative_script;
 static BYTE game_object[0x200];
@@ -159,6 +160,13 @@ int wmain(int argc,wchar_t **argv) {
     if(live) {
         if(!wcscmp(argv[2],L"--live-contention")){GSTStoryPrepDelay=2;GSTStoryHintDelay=4;}
         GSTStoryReadDelay=0;talk_class->name="MonoTalkDialog";talk_class->ready=0x80;
+        if(!wcscmp(argv[2],L"--live-curtain") || !wcscmp(argv[2],L"--live-continue")) {
+            talk_class->name=!wcscmp(argv[2],L"--live-continue")?"MonoClickContinue":"MonoCurtainCanvas";
+            talk_class->fields=curtain_fields;talk_class->definition=curtain_definition;
+            *(WORD *)(curtain_definition+0x38)=(WORD)(2-0x3664);
+            field(curtain_fields,talk_class,&boolean_type,"waitingCandidate",20);
+            field(curtain_fields+1,talk_class,&class_type,"referenceCandidate",24);
+        }
         for(DWORD side=0;side<2;side++) for(DWORD i=0;i<16;i++) {
             large_chunk[side][i]=(uintptr_t)&large_slots[side][i*0x20000];
             large_chunks[side][i]=(uintptr_t)&large_chunk[side][i];
@@ -170,6 +178,7 @@ int wmain(int argc,wchar_t **argv) {
         for(DWORD i=0;i<3;i++) {
             DWORD index=i==0?17:i==1?400000:200000;
             live_managed[i].klass=talk_class;
+            live_managed[i].context=&child;
             live_objects[i].kind=2;live_objects[i].vtable=(uintptr_t)GSTStoryMonoVtable;
             live_objects[i].id=index*2;live_objects[i].managed=&live_managed[i];
             live_objects[i].game_object=live_go[i];live_objects[i].enabled=1;
@@ -242,13 +251,14 @@ int wmain(int argc,wchar_t **argv) {
                     large_slots[0][200000].object=NULL;large_slots[0][400000].object=&live_objects[1];
                 }
             }
-            if(elapsed>=12000 && !wcscmp(argv[2],L"--live-cycle")) live_go[1][0x1f8]=0;
-            if(elapsed>=14000 && !wcscmp(argv[2],L"--live-cycle")) live_objects[1].managed=NULL;
+            if(elapsed>=12000 && (!wcscmp(argv[2],L"--live-cycle") || !wcscmp(argv[2],L"--live-curtain") || !wcscmp(argv[2],L"--live-continue"))) live_go[1][0x1f8]=0;
+            if(elapsed>=14000 && (!wcscmp(argv[2],L"--live-cycle") || !wcscmp(argv[2],L"--live-curtain") || !wcscmp(argv[2],L"--live-continue"))) live_objects[1].managed=NULL;
         }
         if(live && !wcscmp(argv[2],L"--live-dense") && elapsed>=2000) {
             large_slots[0][400000].object=NULL;
             live_objects[1].id=393728*2;large_slots[0][393728].object=&live_objects[1];
         }
+        live_managed[1].isPlaying=elapsed>=6000 && elapsed<12000;
         script.state=elapsed>=2000 && elapsed<4000?2:elapsed>=5000 && elapsed<6000?3:elapsed>=8000 && elapsed<9000?4:0;
         *(DWORD *)(graph+0x98)=elapsed>=2000 && elapsed<6000?1:0;
         director[0x90]=elapsed>=2000 && elapsed<6000;

@@ -104,6 +104,7 @@ try {
     $bootstrapFlags = @('/nologo','/std:c++17','/EHsc','/MT','/O2','/utf-8','/DUNICODE','/D_UNICODE',$bootstrapInclude) + $include
     Run $compiler ($bootstrapFlags + @('tests/bootstrap_test.cpp','src/loader/injector_ui.cpp',('/Fo:' + "$out/tests/bootstrap/"),('/Fe:' + "$out/tests/bootstrap/bootstrap-test.exe")) + $loaderLibraries)
     CompileCpp 'tests/actions-test.exe' @('tests/actions_test.cpp')
+    CompileCpp 'tests/curtain-test.exe' @('tests/curtain_test.cpp')
     $uiObjects = @('resident_ui','imgui','imgui_draw','imgui_widgets','imgui_tables','imgui_impl_dx11') | ForEach-Object { "$out/$_.obj" }
     CompileCpp 'tests/renderer-test.exe' (@('tests/renderer_test.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
     CompileCpp 'tests/material-test.exe' (@('tests/material_test.cpp') + $slimFlags + $uiObjects + $uiLibraries)

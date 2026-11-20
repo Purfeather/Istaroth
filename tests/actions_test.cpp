@@ -7,7 +7,7 @@ int wmain() {
     if(!length||length>=32768)return 1;
     std::wstring path(own,length);path.resize(path.find_last_of(L"\\/")+1);path+=L"dialogue_actions_test.dll";
     HMODULE module=LoadLibraryW(path.c_str());if(!module)return 2;
-    struct Case { const char* name; DWORD expected; } cases[]={{"ActionsSelfTest",32767},{"CombinedGuardSelfTest",511},{"CooldownSelfTest",63},{"OuterWaitSelfTest",3}};
+    struct Case { const char* name; DWORD expected; } cases[]={{"ActionsSelfTest",32767},{"CombinedGuardSelfTest",511},{"CooldownSelfTest",63},{"OuterWaitSelfTest",3},{"ContinueSelfTest",2047}};
     bool passed=true;
     for(auto item:cases) {
         auto run=(DWORD(*)())GetProcAddress(module,item.name);

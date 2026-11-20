@@ -111,6 +111,7 @@ try:
     for mode in ['handover','dead-listed','loaded','crash','repeat','cancel','module-absent']:
         run('bootstrap/bootstrap-test.exe', [mode], out/'tests/bootstrap')
     run('actions-test.exe')
+    run('curtain-test.exe')
     clock_test()
     story_test()
 except Exception as error:

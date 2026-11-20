@@ -139,10 +139,10 @@ static BOOL target_class(const char *name) {
     if(contains(name,"Login") || contains(name,"Server") || contains(name,"Account") ||
        contains(name,"Config") || contains(name,"Gacha")) return FALSE;
     return contains(name,"Sitcom") || contains(name,"Dialog") || contains(name,"Talk") ||
-           contains(name,"Cutscene") || contains(name,"MonoInLevel");
+           contains(name,"Cutscene") || contains(name,"MonoInLevel") || contains(name,"Curtain") || contains(name,"ClickContinue");
 }
 static DWORD priority(const char *name,DWORD id,const ProbeActivity *state) {
-    DWORD kind=equal(name,"MonoTalkDialog")?5:contains(name,"EffectPlugin")?1:
+    DWORD kind=contains(name,"ClickContinue")?7:contains(name,"Curtain")?6:equal(name,"MonoTalkDialog")?5:contains(name,"EffectPlugin")?1:
                contains(name,"Dialog") || contains(name,"Sitcom")?3:
                contains(name,"Talk") || contains(name,"Cutscene")?2:1;
     return kind*4+(!!(id&0xc0000001))+(state->valid && state->hierarchy_active_candidate==1?2:0);
@@ -291,7 +291,8 @@ static void fields(ProbeRecord *record) {
 }
 static void update_fields_raw(ProbeRecord *record,BOOL force) {
     DWORD index=(DWORD)(record-output->records); ULONGLONG now=GetTickCount64();
-    if(!contains(record->class_name,"Sitcom") && !equal(record->class_name,"MonoTalkDialog")) {
+    if(!contains(record->class_name,"Sitcom") && !equal(record->class_name,"MonoTalkDialog") &&
+       !contains(record->class_name,"Curtain") && !contains(record->class_name,"ClickContinue")) {
         /* Rejected UI scalar candidates are not reparsed on every inactive template. */
         record->field_count=0; zero(&output->metadata[index],sizeof(ProbeMetadata));
         output->metadata[index].reserved=1; return;
@@ -522,6 +523,7 @@ static void refresh_retained(void) {
         /* Ordinary dialogue is refreshed every slice. Background telemetry must
            not consume every discovery slice merely because it was found first. */
         if(!equal(record->class_name,"MonoTalkDialog") && !contains(record->class_name,"Sitcom") &&
+           !contains(record->class_name,"Curtain") && !contains(record->class_name,"ClickContinue") &&
            identity_refresh_ticks[i] &&
            now-identity_refresh_ticks[i]<1000) {
             if(now-identity_refresh_ticks[i]>550) output->activity[i].valid=FALSE;

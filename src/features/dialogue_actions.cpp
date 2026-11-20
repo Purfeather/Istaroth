@@ -9,6 +9,7 @@
 #include <intrin.h>
 #include "detours.h"
 #include "dialogue_actions_profile.h"
+#include "curtain_advance.h"
 
 struct Shared {
     DWORD magic,version,pid,status;
@@ -43,6 +44,7 @@ static uint64_t pending_choice;
 static volatile LONG64 last_gate_check;
 static volatile LONG gate_invalidated;
 static HWND volatile game_window;
+static istaroth::ContinueLatch continue_latch;
 extern "C" {
     volatile LONG istaroth_cooldown_enabled=0,istaroth_cooldown_seen=0,istaroth_cooldown_bypassed=0;
     uintptr_t istaroth_cooldown_model=0;
@@ -97,14 +99,18 @@ static bool live_root(const Root &root) {
     return named(root.managed,"MonoTalkDialog")&&pointer(root.managed+16)==root.native&&
         u32(root.native+8)==root.id&&component(root.managed,&go)&&go==root.go;
 }
-static DWORD find_root(Root *root) {
-    BYTE snapshot[19904];LONG before=0,after=0;
+static bool story_snapshot(BYTE *snapshot,DWORD *count) {
+    LONG before=0,after=0;
     if(!story||!bytes(&before,(uintptr_t)story+16,4)||before&1||
-        !bytes(snapshot,(uintptr_t)story,sizeof(snapshot))||!bytes(&after,(uintptr_t)story+16,4)||before!=after)return 2;
-    DWORD magic=0,version=0,pid=0,status=0,count=0;uint64_t heartbeat=0;
+        !bytes(snapshot,(uintptr_t)story,19904)||!bytes(&after,(uintptr_t)story+16,4)||before!=after)return false;
+    DWORD magic=0,version=0,pid=0,status=0;uint64_t heartbeat=0;
     memcpy(&magic,snapshot,4);memcpy(&version,snapshot+4,4);memcpy(&pid,snapshot+8,4);
-    memcpy(&status,snapshot+12,4);memcpy(&count,snapshot+20,4);memcpy(&heartbeat,snapshot+40,8);
-    if(magic!=0x47535331||version!=7||pid!=GetCurrentProcessId()||status!=2||count>16||GetTickCount64()-heartbeat>250)return 2;
+    memcpy(&status,snapshot+12,4);memcpy(count,snapshot+20,4);memcpy(&heartbeat,snapshot+40,8);
+    return magic==0x47535331&&version==7&&pid==GetCurrentProcessId()&&status==2&&*count<=16&&GetTickCount64()-heartbeat<=250;
+}
+static DWORD find_root(Root *root) {
+    BYTE snapshot[19904];DWORD count=0;
+    if(!story_snapshot(snapshot,&count))return 2;
     DWORD found=0;
     for(DWORD i=0;i<count;i++) {
         BYTE *record=snapshot+56+i*896;char name[64]={};memcpy(name,record+28,63);
@@ -117,6 +123,28 @@ static DWORD find_root(Root *root) {
         *root=candidate;
     }
     return found?0:3;
+}
+static istaroth::ContinueObservation find_continue(istaroth::ContinueKey *key,uint64_t now) {
+    BYTE snapshot[19904];DWORD count=0,found=0;bool invalid=false;
+    if(!story_snapshot(snapshot,&count))return istaroth::ContinueObservation::Unknown;
+    for(DWORD i=0;i<count;i++) {
+        BYTE *record=snapshot+56+i*896;char name[64]={};memcpy(name,record+28,63);
+        if(strcmp(name,"MonoClickContinue"))continue;
+        istaroth::ContinueKey candidate{};DWORD origin=0;
+        memcpy(&candidate.native,record,8);memcpy(&candidate.managed,record+8,8);
+        memcpy(&candidate.instance,record+16,4);memcpy(&origin,record+24,4);
+        BYTE prefix[80]={},flags[3]={};uintptr_t owner=0;
+        if(origin||!candidate.Valid()||!named(candidate.managed,"MonoClickContinue")||
+           pointer(candidate.managed+16)!=candidate.native||!bytes(prefix,candidate.native,sizeof(prefix))||
+           pointer(candidate.native)!=(uintptr_t)image+MONO_VTABLE_RVA||u32(candidate.native+8)!=candidate.instance||
+           u32(candidate.native+0x20)!=2||pointer(candidate.native+0x28)!=candidate.managed) {invalid=true;continue;}
+        memcpy(&owner,prefix+0x40,8);
+        if(!bytes(flags,owner+0x1f6,3)||flags[2]>1||prefix[0x48]>1) {invalid=true;continue;}
+        if(!flags[2])continue_latch.Observe(istaroth::ContinueObservation::Inactive,candidate,now,false);
+        else if(!prefix[0x48])invalid=true;
+        else {*key=candidate;found++;}
+    }
+    return !invalid&&found==1?istaroth::ContinueObservation::Waiting:istaroth::ContinueObservation::Unknown;
 }
 static uintptr_t advance_info(const Root &root,uintptr_t context) {
     if(!named(context,CONTEXT_CLASS)||pointer(context+104)!=root.managed||pointer(context+632)!=root.managed)return 0;
@@ -255,6 +283,9 @@ static void tick() {
     uint64_t now=GetTickCount64();if(now-last_poll<50)return;last_poll=now;
     InterlockedExchange64(&last_gate_check,(LONG64)now);
     Root root={};uintptr_t context=0;resolve_gate(now,&root,&context);
+    istaroth::ContinueKey continue_key{};
+    auto continue_observation=find_continue(&continue_key,now);
+    continue_latch.Observe(continue_observation,continue_key,now,false);
     Shared command={};state.status=1;state.reason=0;state.option_count=0;
     if(!read_command(&command)){clear_cooldown();state.reason=10;publish();return;}
     state.ack_command=(DWORD)command.command;
@@ -275,12 +306,26 @@ static void tick() {
     button=first_button(root,&item,&count);
     bool options=button&&one(button+176)&&one(button+192);
     state.option_count=options?count:0;
-    if(line==1&&!options) {
+    if(continue_observation==istaroth::ContinueObservation::Waiting) {
+        clear_cooldown();
+        if(line||options){state.reason=27;publish();return;}
+        if(!command.advance){state.reason=6;publish();return;}
+        // The research probe identified this reference in the real notebook.
+        // The existing UnityEvent metadata/byte guards validate its invocation.
+        button=pointer(continue_key.managed+72);event=pointer(button+216);
+        info=event_info(event);rva=EVENT_INVOKE_RVA;kind=3;item=0;count=0;
+    } else if(line==1&&!options) {
+#ifdef ISTAROTH_CURTAIN_SHADOW
+        clear_cooldown();state.reason=28;publish();return;
+#endif
         pending_choice=0;
         if(!command.advance){state.reason=6;publish();return;}
         item=0;count=0;
         button=context;info=advance_info(root,context);event=context;rva=FREE_CLICK_RVA;kind=1;
     } else {
+#ifdef ISTAROTH_CURTAIN_SHADOW
+        clear_cooldown();state.reason=28;publish();return;
+#endif
         if(!command.choose){state.reason=7;publish();return;}
         event=pointer(button+216);info=event_info(event);rva=EVENT_INVOKE_RVA;kind=2;
         key=choice_key(root,count);
@@ -288,17 +333,25 @@ static void tick() {
     }
     if(now-state.last_tick<50){state.reason=9;publish();return;}
     BYTE actual[64]={};
-    bool valid=kind==1?advance_info(root,button)==info:component(button)&&one(button+176)&&one(button+192)&&key;
+    bool valid=kind==1?advance_info(root,button)==info:component(button)&&one(button+176)&&one(button+192)&&
+        (kind==3?(named(button,"Button")&&pointer(continue_key.managed+72)==button&&
+                   named(continue_key.managed,"MonoClickContinue")&&component(continue_key.managed)&&
+                   pointer(continue_key.managed+16)==continue_key.native&&pointer(continue_key.native+0x28)==continue_key.managed&&
+                   one(continue_key.native+0x48)&&u32(continue_key.native+8)==continue_key.instance):key!=0);
     if(!button||!valid||!info||!bytes(actual,(uintptr_t)image+rva,64)||memcmp(actual,kind==1?free_click_bytes:event_bytes,64)) {
         state.reason=8;publish();return;
     }
     BYTE current_line=255;bytes(&current_line,root.managed+256,1);
     if(!live_root(root)||!foreground()||shared->stop||command.command!=shared->command||current_line!=line||
-        (kind==2&&pointer(button+216)!=event)||(kind==1&&!advance_info(root,button))||
+        (kind!=1&&pointer(button+216)!=event)||(kind==1&&!advance_info(root,button))||
         GetTickCount64()-shared->command_tick>400){clear_cooldown();state.reason=15;publish();return;}
+    if(kind==3&&!continue_latch.Observe(continue_observation,continue_key,now,true)){state.reason=21;publish();return;}
     state.last_kind=kind;state.last_index=kind==2?0:0xffffffff;state.last_tick=now;
     state.last_button=button;state.last_event=event;
     if(item)choice_text(item);else memset(state.text,0,sizeof(state.text));
+#ifdef ISTAROTH_CURTAIN_SHADOW
+    if(kind==3){state.reason=26;publish();return;}
+#endif
     // Only our validated automatic call may omit the outer click-time waits.
     // Other game callers retain their original time and readiness checks.
     if(kind==1) {
@@ -308,7 +361,7 @@ static void tick() {
     state.attempts++;state.error=invoke_game(event,info,rva);
     InterlockedExchangePointer((PVOID volatile*)&istaroth_advance_context,nullptr);
     InterlockedExchange(&istaroth_advance_tid,0);
-    if(!state.error){state.completed++;state.reason=kind==1?11:12;if(kind==2){pending_choice=key;state.choice_total++;}else state.advance_total++;}
+    if(!state.error){state.completed++;state.reason=kind==3?22:kind==1?11:12;if(kind==2){pending_choice=key;state.choice_total++;}else state.advance_total++;}
     else {clear_cooldown();state.status=3;state.reason=13;}
     publish();
 }
@@ -402,6 +455,39 @@ BOOL WINAPI DllMain(HINSTANCE module,DWORD reason,void*) {
 #endif
 }
 #ifdef ISTAROTH_ACTIONS_TEST
+extern "C" __declspec(dllexport) DWORD ContinueSelfTest() {
+    alignas(8) BYTE klass[208]={},object[32]={},native[80]={},go[512]={},probe[19904]={};
+    char name[64]="MonoClickContinue";image=(BYTE*)0x100000;
+    uintptr_t value=(uintptr_t)name;memcpy(klass+0x70,&value,8);
+    value=(uintptr_t)klass;memcpy(object,&value,8);
+    value=(uintptr_t)native;memcpy(object+16,&value,8);
+    value=(uintptr_t)image+MONO_VTABLE_RVA;memcpy(native,&value,8);
+    DWORD id=42,kind=2;memcpy(native+8,&id,4);memcpy(native+0x20,&kind,4);
+    value=(uintptr_t)object;memcpy(native+0x28,&value,8);
+    value=(uintptr_t)go;memcpy(native+0x40,&value,8);native[0x48]=go[0x1f8]=1;
+    DWORD magic=0x47535331,version=7,pid=GetCurrentProcessId(),status=2,count=1;
+    uint64_t now=GetTickCount64();memcpy(probe,&magic,4);memcpy(probe+4,&version,4);
+    memcpy(probe+8,&pid,4);memcpy(probe+12,&status,4);memcpy(probe+20,&count,4);memcpy(probe+40,&now,8);
+    BYTE *record=probe+56;value=(uintptr_t)native;memcpy(record,&value,8);
+    value=(uintptr_t)object;memcpy(record+8,&value,8);memcpy(record+16,&id,4);
+    strcpy_s((char*)record+28,64,name);story=probe;continue_latch={};
+    istaroth::ContinueKey key{};using O=istaroth::ContinueObservation;DWORD result=0;
+    if(find_continue(&key,now)==O::Waiting&&key.instance==42)result|=1;
+    native[0x48]=0;if(find_continue(&key,now)==O::Unknown)result|=2;native[0x48]=1;
+    continue_latch.submitted=key;go[0x1f8]=0;
+    if(find_continue(&key,now)==O::Unknown&&!continue_latch.submitted.Valid())result|=4;go[0x1f8]=1;
+    count=2;memcpy(probe+20,&count,4);memcpy(record+896,record,896);
+    if(find_continue(&key,now)==O::Unknown)result|=8;count=1;memcpy(probe+20,&count,4);
+    uint64_t stale=now-500;memcpy(probe+40,&stale,8);
+    if(find_continue(&key,now)==O::Unknown)result|=16;memcpy(probe+40,&now,8);
+    pid++;memcpy(probe+8,&pid,4);if(find_continue(&key,now)==O::Unknown)result|=32;pid--;memcpy(probe+8,&pid,4);
+    DWORD origin=24;memcpy(record+24,&origin,4);if(find_continue(&key,now)==O::Unknown)result|=64;origin=0;memcpy(record+24,&origin,4);
+    id++;memcpy(native+8,&id,4);if(find_continue(&key,now)==O::Unknown)result|=128;id--;memcpy(native+8,&id,4);
+    go[0x1f8]=255;if(find_continue(&key,now)==O::Unknown)result|=256;go[0x1f8]=1;
+    count=0;memcpy(probe+20,&count,4);if(find_continue(&key,now)==O::Unknown)result|=512;count=1;memcpy(probe+20,&count,4);
+    version=8;memcpy(probe+4,&version,4);if(find_continue(&key,now)==O::Unknown)result|=1024;
+    story=nullptr;continue_latch={};return result;
+}
 static bool outer_fixture(void **original,void **next,void *hook,void *compare,void *continuation,
                           DWORD(*fixture)(float,float,uintptr_t)) {
     *original=compare;*next=continuation;
