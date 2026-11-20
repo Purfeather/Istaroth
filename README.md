@@ -1,6 +1,6 @@
 # Istaroth · 伊斯塔露
 
-Windows x64 原神剧情辅助工具。当前正式版为 [**v0.3.0**](https://github.com/Purfeather/Istaroth/releases/tag/v0.3.0)。
+Windows x64 原神剧情辅助工具。当前正式版为 [**v0.4.0**](https://github.com/Purfeather/Istaroth/releases/tag/v0.4.0)。
 
 `main` 保存已验收的源码更新，可能领先于已发布安装包；[develop](https://github.com/Purfeather/Istaroth/tree/develop) 用于保存开发中的修改，可能尚未完成全部测试。已发布安装包请前往 [Release](https://github.com/Purfeather/Istaroth/releases)；开发流程见 [开发分支说明](docs/DEVELOPMENT.md)。
 
@@ -13,7 +13,7 @@ Istaroth 是由独立开发者维护的第三方项目，与米哈游（miHoYo�
 - 游戏内菜单与 HUD，加载器确认初始化后自动退出，无外部常驻控制进程。
  - 首次对话出现前的纯过场可能不加速；隐藏对话 UI 的常规剧情过场已实测支持。游戏自带跳过按钮的部分过场动画不在此功能范围内。
 - 菜单与 HUD 在 DX11 游戏帧内绘制，支持毛玻璃背景与 sRGB 配色修正。独占全屏兼容性待实机验收。
-- main 已加入幕布旁白自动继续，莎莎练习笔记及同段剧情后续幕布通过实机验收，见 [实现与验收范围](docs/CURTAIN-CANDIDATE.md)。已发布的 v0.3.0 安装包尚不包含此更新。
+- 幕布旁白沿用自动推进开关，莎莎练习笔记及同段剧情后续幕布通过实机验收，见 [实现与验收范围](docs/CURTAIN-CANDIDATE.md) 与 [v0.4.0 发布说明](docs/RELEASE-v0.4.0.md)。
  - 仅支持 [兼容指纹](profiles/compatibility.json) 指定的 YuanShen.exe。游戏版本不匹配时将拒绝加载；使用第三方辅助工具可能存在账号与兼容风险，详见 [使用风险声明](docs/DISCLAIMER.md)。
 
 ## 使用
