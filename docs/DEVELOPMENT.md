@@ -1,6 +1,6 @@
 # 开发分支
 
-`develop` 用于保存正在开发、尚未完成全部测试的修改。`main` 保留正式发布的源码；已验收安装包从 [Release](https://github.com/Purfeather/Istaroth/releases) 获取。
+`develop` 用于保存正在开发、尚未完成全部测试的修改。`main` 保存已验收源码，可能包含尚未打包发布的更新；已发布安装包从 [Release](https://github.com/Purfeather/Istaroth/releases) 获取。
 
 ## 日常开发
 

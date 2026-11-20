@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-21",
+  "acceptance": "user-reported live acceptance",
+  "status": "passed",
+  "candidate": {
+    "source_commit": "45d41088d7988e797266f8b7622b59c05bee4a90",
+    "archive": "Istaroth-curtain-candidate-20261121-win64.zip",
+    "archive_sha256": "32f8160184716293075a10ae50b238bc6e474bc139b959b07c8721a717ce1d00"
+  },
+  "user_report": "验收完成。此段剧情后续还有其他的幕布过场，生效正常。合并到main",
+  "passed_scope": [
+    "莎莎练习笔记的幕布自动继续",
+    "同段剧情后续其他幕布过场"
+  ],
+  "prior_validation": {
+    "offline_groups_passed": 17,
+    "single_native_continue_attempts": 1,
+    "single_native_continue_completed": 1,
+    "visible_result": "笔记页返回派蒙首句"
+  },
+  "unverified_scope": [
+    "其他剧情中的幕布界面",
+    "同一控件持续活动、仅替换正文的多页路径"
+  ],
+  "release_created": false
+}
