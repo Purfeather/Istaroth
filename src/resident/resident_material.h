@@ -46,8 +46,16 @@ class SceneBlur {
     HRESULT failure=S_OK;
     static void Check(HRESULT value){if(FAILED(value))throw value;}
     void ResetTextures() {
-        copy.Reset();source.Reset();result.Reset();encoded.Reset();
-        for(unsigned i=0;i<2;i++){linear[i].Reset();views[i].Reset();}for(auto& target:targets)target.Reset();width=height=samples=0;
+        copy.Reset();
+        source.Reset();
+        result.Reset();
+        encoded.Reset();
+        for (unsigned i = 0; i < 2; ++i) {
+            linear[i].Reset();
+            views[i].Reset();
+        }
+        for (auto& target : targets) target.Reset();
+        width = height = samples = 0;
     }
     void PreparePipeline(ID3D11Device* device) {
         if (vs) return;
@@ -99,7 +107,7 @@ class SceneBlur {
         constants.centerWeight = 1 / total;
         for (Tap& tap : constants.taps) tap.weight /= total;
     }
-    void Prepare(ID3D11Device* device,const D3D11_TEXTURE2D_DESC& input) {
+    void PrepareForInput(ID3D11Device* device,const D3D11_TEXTURE2D_DESC& input) {
         if(copy&&width==input.Width&&height==input.Height&&format==input.Format&&samples==input.SampleDesc.Count)return;
         ResetTextures();DXGI_FORMAT unorm=UiUnormFormat(input.Format);if(unorm==DXGI_FORMAT_UNKNOWN)throw DXGI_ERROR_UNSUPPORTED;
         PreparePipeline(device);
@@ -121,7 +129,14 @@ class SceneBlur {
     }
 public:
     void Reset() {
-        ResetTextures();vs.Reset();ps.Reset();parameters.Reset();sampler.Reset();raster.Reset();depth.Reset();failure=S_OK;
+        ResetTextures();
+        vs.Reset();
+        ps.Reset();
+        parameters.Reset();
+        sampler.Reset();
+        raster.Reset();
+        depth.Reset();
+        failure = S_OK;
     }
     // The caller saves/restores pipeline state. Copy before drawing any UI.
     HRESULT Draw(ID3D11Device* device,ID3D11DeviceContext* context,ID3D11Texture2D* input,D3D11_RECT area,float strength,ID3D11ShaderResourceView** output) noexcept {
@@ -132,7 +147,7 @@ public:
             D3D11_TEXTURE2D_DESC description{};input->GetDesc(&description);
             if(!description.Width||!description.Height||!std::isfinite(strength)||strength<=0||strength>8||
                area.left<0||area.top<0||area.right>(LONG)description.Width||area.bottom>(LONG)description.Height||area.left>=area.right||area.top>=area.bottom)return E_INVALIDARG;
-            Prepare(device,description);
+            PrepareForInput(device,description);
             UpdateKernel(strength);
             const LONG margin = kernel_radius * 4 + 12;
             D3D11_RECT region{std::max(0L,area.left-margin),std::max(0L,area.top-margin),std::min((LONG)width,area.right+margin),std::min((LONG)height,area.bottom+margin)};

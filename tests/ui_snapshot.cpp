@@ -33,7 +33,7 @@ int wmain(int argc,wchar_t** argv) {
         Check(device->CreateTexture2D(&desc,nullptr,&texture));Check(device->CreateRenderTargetView(texture.Get(),nullptr,&target));
         ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.LogFilename=nullptr;
         io.DisplaySize=ImVec2((float)width,(float)height);io.DeltaTime=1.f/60.f;
-        float scale=std::clamp(std::min(width/1920.f,height/1080.f),.65f,2.f);
+        float scale=istaroth::ResidentUiScale(static_cast<float>(width),static_cast<float>(height));
         wchar_t fonts[MAX_PATH];GetWindowsDirectoryW(fonts,MAX_PATH);std::wstring path=std::wstring(fonts)+L"\\Fonts\\msyh.ttc";
         char utf8[2048];WideCharToMultiByte(CP_UTF8,0,path.c_str(),-1,utf8,2048,nullptr,nullptr);
         ImFontConfig font_config;font_config.OversampleH=2;font_config.OversampleV=2;font_config.PixelSnapH=true;

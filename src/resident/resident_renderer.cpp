@@ -118,31 +118,54 @@ static void InstallInput(HWND window) {
     previous_window=previous;
 }
 static void ResetGraphics() {
-    active_chain=nullptr;target.Reset();icon.Reset();scene_blur.Reset();blur_failure_logged=false;menu_opacity=0;InterlockedExchange(&BackdropReady,0);
-    if(graphics)ImGui_ImplDX11_Shutdown();if(platform)ImGui_ImplWin32_Shutdown();
-    graphics=platform=false;if(ImGui::GetCurrentContext())ImGui::DestroyContext();
-    context.Reset();device.Reset();InterlockedExchange(&RendererReady,0);
-    last_fullscreen=-1;last_width=last_height=0;
-    InterlockedExchange(&clear_input,1);SetMenuVisible(false);
+    active_chain = nullptr;
+    target.Reset();
+    icon.Reset();
+    scene_blur.Reset();
+    blur_failure_logged = false;
+    menu_opacity = 0;
+    InterlockedExchange(&BackdropReady, 0);
+
+    if (graphics) ImGui_ImplDX11_Shutdown();
+    if (platform) ImGui_ImplWin32_Shutdown();
+    graphics = platform = false;
+    if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
+    context.Reset();
+    device.Reset();
+    InterlockedExchange(&RendererReady, 0);
+
+    last_fullscreen = -1;
+    last_width = last_height = 0;
+    InterlockedExchange(&clear_input, 1);
+    SetMenuVisible(false);
+}
+static void LoadUiFont(float scale) {
+    wchar_t windows[MAX_PATH];
+    GetWindowsDirectoryW(windows,MAX_PATH);
+    ImFontConfig config;
+    config.OversampleH = 2;
+    config.OversampleV = 2;
+    config.PixelSnapH = true;
+    for (auto name : {L"msyh.ttc", L"simhei.ttf", L"msyh.ttf"}) {
+        auto path = std::wstring(windows) + L"\\Fonts\\" + name;
+        char utf8[2048];
+        if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) continue;
+        if (!WideCharToMultiByte(CP_UTF8,0,path.c_str(),-1,utf8,sizeof(utf8),nullptr,nullptr)) continue;
+        if (ImGui::GetIO().Fonts->AddFontFromFileTTF(utf8,16.f*scale,&config,ResidentGlyphs)) return;
+    }
+    throw HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 }
 static void Initialize(IDXGISwapChain* chain,HWND window) {
     ResetGraphics();Check(chain->GetDevice(IID_PPV_ARGS(&device)));device->GetImmediateContext(&context);
     if(!context)throw E_FAIL;
     InstallInput(window);ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=io.LogFilename=nullptr;
     io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard|ImGuiConfigFlags_NoMouseCursorChange;ImGui::StyleColorsDark();
-    wchar_t windows[MAX_PATH];GetWindowsDirectoryW(windows,MAX_PATH);bool loaded=false;
     DXGI_SWAP_CHAIN_DESC swap_desc{};
     float init_scale=1.0f;
     if(SUCCEEDED(chain->GetDesc(&swap_desc))&&swap_desc.BufferDesc.Width&&swap_desc.BufferDesc.Height) {
-        init_scale=std::clamp(std::min(swap_desc.BufferDesc.Width/1920.f,swap_desc.BufferDesc.Height/1080.f),.65f,2.f);
+        init_scale=ResidentUiScale(static_cast<float>(swap_desc.BufferDesc.Width),static_cast<float>(swap_desc.BufferDesc.Height));
     }
-    ImFontConfig font_config;font_config.OversampleH=2;font_config.OversampleV=2;font_config.PixelSnapH=true;
-    for(auto name:{L"msyh.ttc",L"simhei.ttf",L"msyh.ttf"}) {
-        auto path=std::wstring(windows)+L"\\Fonts\\"+name;char utf8[2048];
-        if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES&&WideCharToMultiByte(CP_UTF8,0,path.c_str(),-1,utf8,2048,nullptr,nullptr)&&
-           io.Fonts->AddFontFromFileTTF(utf8,16.f*init_scale,&font_config,ResidentGlyphs)){loaded=true;break;}
-    }
-    if(!loaded)throw HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+    LoadUiFont(init_scale);
     platform=ImGui_ImplWin32_Init(window);if(!platform)throw E_FAIL;
     graphics=ImGui_ImplDX11_Init(device.Get(),context.Get());if(!graphics)throw E_FAIL;
     struct Apartment {HRESULT value=CoInitializeEx(nullptr,COINIT_MULTITHREADED);~Apartment(){if(SUCCEEDED(value))CoUninitialize();}} apartment;
@@ -233,7 +256,8 @@ static void Render(IDXGISwapChain* chain,UINT flags) {
         ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();
         if(io.DisplaySize.x<=0||io.DisplaySize.y<=0)return;
         io.DisplayFramebufferScale=ImVec2(1,1);
-        bool open=MenuVisible!=0;float scale=std::clamp(std::min(io.DisplaySize.x/1920.f,io.DisplaySize.y/1080.f),.65f,2.f);
+        bool open=MenuVisible!=0;
+        const float scale=ResidentUiScale(io.DisplaySize.x,io.DisplaySize.y);
         menu_opacity=StepMenuOpacity(menu_opacity,open,io.DeltaTime);
         D3D11_RECT area{0,0,(LONG)dimensions.Width,(LONG)dimensions.Height};
         if(!open&&menu_opacity<=.01f) {

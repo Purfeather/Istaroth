@@ -22,6 +22,7 @@ struct UiState {
 };
 using UiEmit=void(*)(UiCommand,int);
 void SetOpenMenuReason(UiState& state);
+float ResidentUiScale(float display_width, float display_height);
 float StepMenuOpacity(float current,bool menu_open,float delta_time);
 // A negative opacity requests a settled frame for offline snapshots.
 void DrawResidentUi(const UiState&,bool& menu_open,float scale,UiEmit,float menu_opacity=-1.f);

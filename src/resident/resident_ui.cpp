@@ -1,6 +1,7 @@
 #include "resident_ui.h"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include <algorithm>
 #include <cmath>
 #include <cfloat>
 #include <cstdio>
@@ -765,6 +766,10 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
 // -----------------------------------------------------------------------------
 // Public Exported Entry Point
 // -----------------------------------------------------------------------------
+float ResidentUiScale(float display_width, float display_height) {
+    return std::clamp((std::min)(display_width / 1920.f, display_height / 1080.f), .65f, 2.f);
+}
+
 void SetOpenMenuReason(UiState& state) {
     if (state.dialogue_ready && state.target != 1) {
         std::snprintf(state.reason, sizeof(state.reason), u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速", state.target);
