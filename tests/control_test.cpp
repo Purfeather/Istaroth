@@ -10,6 +10,27 @@ int main() {
     ActionShared a{};a.magic=0x49534131;a.version=4;a.pid=42;a.status=1;a.heartbeat=1000;a.gate_valid=1;a.foreground=1;a.gate_epoch=7;a.root_native=123;
     ResidentControl controller;Desired d;
     auto run=[&](uint64_t now=1000,bool front=true,bool rendered=true,bool initialized=true){return controller.Evaluate(d,&c,&a,42,now,front,rendered,initialized);};
+    {
+        Desired settings;
+        settings.enabled=true;
+        auto expect=[&](const ClockShared* clock,const ActionShared* actions,bool front,bool rendered,
+                        bool initialized,UiPhase phase,const char* reason) {
+            ResidentControl display;
+            auto result=display.Evaluate(settings,clock,actions,42,1000,front,rendered,initialized);
+            return result.ui.phase==phase && strcmp(result.ui.reason,reason)==0;
+        };
+        CHECK(expect(nullptr,nullptr,false,false,false,UiPhase::Starting,u8"正在初始化组件，请稍候"));
+        CHECK(expect(nullptr,nullptr,false,false,true,UiPhase::Waiting,u8"游戏处于后台，等待返回后重验"));
+        CHECK(expect(nullptr,nullptr,true,false,true,UiPhase::Waiting,u8"等待界面恢复"));
+        CHECK(expect(nullptr,nullptr,true,true,true,UiPhase::Waiting,u8"等待游戏时钟恢复"));
+        CHECK(expect(&c,nullptr,true,true,true,UiPhase::Waiting,u8"游戏更新暂停，等待重新确认"));
+        auto pending=a;
+        pending.gate_valid=0;
+        pending.gate_reason=17;
+        CHECK(expect(&c,&pending,true,true,true,UiPhase::Confirming,u8"正在确认对话与目标倍率"));
+        pending.heartbeat=1;
+        CHECK(expect(&c,&pending,true,true,true,UiPhase::Waiting,u8"游戏更新暂停，等待重新确认"));
+    }
     CHECK(!run().permit&&!run().clock_enabled);
     controller.ClockSent(false,1,0);controller.ActionsSent(false,d,0,0);
     CHECK(run().ui.phase==UiPhase::Restoring); // Components have not opened their maps yet.

@@ -765,6 +765,17 @@ static void DrawMenuModal(const UiState& snapshot, bool& menu_open, float scale,
 // -----------------------------------------------------------------------------
 // Public Exported Entry Point
 // -----------------------------------------------------------------------------
+void SetOpenMenuReason(UiState& state) {
+    if (state.dialogue_ready && state.target != 1) {
+        std::snprintf(state.reason, sizeof(state.reason), u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速", state.target);
+    } else if (state.dialogue_ready) {
+        strcpy_s(state.reason, u8"当前处于对话中，关闭面板后按原速执行已选功能");
+    } else {
+        strcpy_s(state.reason, state.target == 1 ? u8"当前保持原速；关闭面板后进入对话执行已选功能"
+                                                : u8"当前保持原速；关闭面板后进入对话自动加速");
+    }
+}
+
 float StepMenuOpacity(float current, bool menu_open, float delta_time) {
     float target = menu_open ? 1.f : 0.f;
     float dt = std::isfinite(delta_time) ? ImClamp(delta_time, 0.f, .05f) : 0.f;

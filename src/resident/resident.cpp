@@ -14,7 +14,9 @@ HWND GameWindow=nullptr;
 volatile LONG MenuVisible=0,RendererReady=0,BackdropReady=0;
 alignas(8) volatile LONG64 LastPresent=0;
 std::wstring DataDirectory;
-static volatile LONG enabled=0,target=4,features=7,persist_revision=0,external_error=0,ui_ready=0;
+enum FeatureBit : LONG { AdvanceBit=1, ChooseFirstBit=2, SkipCooldownBit=4 };
+static volatile LONG enabled=0,target=4,features=AdvanceBit|ChooseFirstBit|SkipCooldownBit;
+static volatile LONG persist_revision=0,external_error=0,ui_ready=0;
 static SRWLOCK ui_lock=SRWLOCK_INIT;
 static UiState ui_state;
 alignas(8) static volatile LONG64 last_control=0;
@@ -44,8 +46,13 @@ void EmitCommand(UiCommand command,int value) {
         if(value&&!InterlockedCompareExchange(&ui_ready,0,0))return;
         InterlockedExchange(&enabled,value);return;
     }
-    LONG bit=command==UiCommand::Advance?1:command==UiCommand::ChooseFirst?2:command==UiCommand::SkipCooldown?4:0;
-    if(!bit)return;
+    LONG bit;
+    switch (command) {
+    case UiCommand::Advance: bit=AdvanceBit; break;
+    case UiCommand::ChooseFirst: bit=ChooseFirstBit; break;
+    case UiCommand::SkipCooldown: bit=SkipCooldownBit; break;
+    default: return;
+    }
     LONG before=features,after;
     do {after=value?before|bit:before&~bit;LONG found=InterlockedCompareExchange(&features,after,before);if(found==before)break;before=found;}while(true);
     InterlockedIncrement(&persist_revision);
@@ -59,10 +66,7 @@ UiState GetUiState() {
         strcpy_s(copy.reason,u8"控制器响应超时，等待恢复确认");
     }
     else if(MenuVisible&&GameWindow&&GetForegroundWindow()==GameWindow&&copy.enabled&&copy.phase!=UiPhase::Fault) {
-        if(copy.dialogue_ready) {
-            if(copy.target==1)strcpy_s(copy.reason,u8"当前处于对话中，关闭面板后按原速执行已选功能");
-            else std::snprintf(copy.reason,sizeof(copy.reason),u8"检测到当前处于对话中，关闭面板后立即按 %u× 加速",copy.target);
-        } else strcpy_s(copy.reason,copy.target==1?u8"当前保持原速；关闭面板后进入对话执行已选功能":u8"当前保持原速；关闭面板后进入对话自动加速");
+        SetOpenMenuReason(copy);
     }
     return copy;
 }
@@ -114,17 +118,36 @@ static DWORD LoadPeer(const PinnedPeer& peer) {
     catch (DWORD error) { return error; }
     catch (const std::bad_alloc&) { return ERROR_OUTOFMEMORY; }
 }
+static void LoadSettings() {
+    const std::wstring ini = DataDirectory + L"Istaroth.ini";
+    const unsigned configured = GetPrivateProfileIntW(L"Settings", L"Multiplier", 4, ini.c_str());
+    target = configured >= 1 && configured <= 4 ? static_cast<LONG>(configured) : 4;
+    auto selected = [&](const wchar_t* key) { return GetPrivateProfileIntW(L"Settings", key, 1, ini.c_str()) == 1; };
+    features = (selected(L"Advance") ? AdvanceBit : 0)
+             | (selected(L"ChooseFirst") ? ChooseFirstBit : 0)
+             | (selected(L"SkipCooldown") ? SkipCooldownBit : 0);
+}
+
 static Desired GetDesired() {
-    Desired d;d.enabled=enabled!=0;d.target=(unsigned)target;LONG bits=features;
-    d.advance=(bits&1)!=0;d.choose=(bits&2)!=0;d.skip=(bits&4)!=0;return d;
+    Desired d;
+    d.enabled = enabled != 0;
+    d.target = static_cast<unsigned>(target);
+    const LONG bits = features;
+    d.advance = (bits & AdvanceBit) != 0;
+    d.choose = (bits & ChooseFirstBit) != 0;
+    d.skip = (bits & SkipCooldownBit) != 0;
+    return d;
 }
 static void SaveDesired(const Desired& d) {
     std::wstring path=DataDirectory+L"Istaroth.ini";wchar_t number[8];swprintf_s(number,L"%u",d.target);
     DWORD error=0;
-    if(!WritePrivateProfileStringW(L"Settings",L"Multiplier",number,path.c_str()))error=GetLastError();
-    if(!WritePrivateProfileStringW(L"Settings",L"Advance",d.advance?L"1":L"0",path.c_str())&&!error)error=GetLastError();
-    if(!WritePrivateProfileStringW(L"Settings",L"ChooseFirst",d.choose?L"1":L"0",path.c_str())&&!error)error=GetLastError();
-    if(!WritePrivateProfileStringW(L"Settings",L"SkipCooldown",d.skip?L"1":L"0",path.c_str())&&!error)error=GetLastError();
+    auto write = [&](const wchar_t* key, const wchar_t* value) {
+        if (!WritePrivateProfileStringW(L"Settings", key, value, path.c_str()) && !error) error = GetLastError();
+    };
+    write(L"Multiplier", number);
+    write(L"Advance", d.advance ? L"1" : L"0");
+    write(L"ChooseFirst", d.choose ? L"1" : L"0");
+    write(L"SkipCooldown", d.skip ? L"1" : L"0");
     char line[160];sprintf_s(line,"event=config_saved error=%lu target=%u advance=%u choose=%u skip=%u",error,d.target,d.advance,d.choose,d.skip);Log(line);
 }
 static void Publish(const ControlResult& result,const ClockShared* c,const ActionShared* a,bool initialized) {
@@ -164,11 +187,7 @@ static DWORD WINAPI Run(void*) {
     runtime->magic=RuntimeMagic;runtime->version=RuntimeVersion;runtime->size=sizeof(RuntimeView);runtime->pid=GetCurrentProcessId();
     FILETIME birth,exit,kernel,user;GetProcessTimes(GetCurrentProcess(),&birth,&exit,&kernel,&user);memcpy(&runtime->birth,&birth,8);
     runtime->status=1;runtime->heartbeat=GetTickCount64();Log("resident loaded; initial state paused");
-    std::wstring ini=DataDirectory+L"Istaroth.ini";
-    unsigned configured=GetPrivateProfileIntW(L"Settings",L"Multiplier",4,ini.c_str());target=configured>=1&&configured<=4?(LONG)configured:4;
-    features=(GetPrivateProfileIntW(L"Settings",L"Advance",1,ini.c_str())==1?1:0)|
-        (GetPrivateProfileIntW(L"Settings",L"ChooseFirst",1,ini.c_str())==1?2:0)|
-        (GetPrivateProfileIntW(L"Settings",L"SkipCooldown",1,ini.c_str())==1?4:0);
+    LoadSettings();
     swprintf_s(name,L"Local\\Istaroth.DialogueActions.Writer.%lu",GetCurrentProcessId());
     HANDLE action_writer=CreateMutexW(nullptr,FALSE,name);
     if(!action_writer||GetLastError()==ERROR_ALREADY_EXISTS)SetRuntimeError(ERROR_BUSY,"another action writer exists");
@@ -253,7 +272,11 @@ static DWORD WINAPI Run(void*) {
             Log(line);last_diagnostic=now;
         }
         if(result.ui.phase!=previous) {previous=result.ui.phase;Log(result.ui.reason);}
-        LONG revision=persist_revision;if(revision!=saved_revision){SaveDesired(GetDesired());saved_revision=revision;}
+        const LONG revision = persist_revision;
+        if (revision != saved_revision) {
+            SaveDesired(GetDesired());
+            saved_revision = revision;
+        }
         Sleep(25);
     }
 }
