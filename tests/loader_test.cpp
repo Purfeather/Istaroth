@@ -102,15 +102,15 @@ int wmain() {
     RECT suggested={10,10,970,400},actual{};SendMessageW(progress,WM_DPICHANGED,MAKELONG(144,144),(LPARAM)&suggested);GetWindowRect(progress,&actual);Check(EqualRect(&suggested,&actual)!=FALSE);
     SendMessageW(progress,WM_SYSCOMMAND,SC_CLOSE,0);Check(cancel_requested);Check(IsWindow(progress)&&!IsWindowVisible(progress));
     HDC dc=CreateCompatibleDC(nullptr);BITMAPINFO bitmap{};bitmap.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-    bitmap.bmiHeader.biWidth=640;bitmap.bmiHeader.biHeight=-220;bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;
+    bitmap.bmiHeader.biWidth=kInjectorDesignWidth;bitmap.bmiHeader.biHeight=-kInjectorDesignHeight;bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;
     void* pixels=nullptr;HBITMAP image=CreateDIBSection(nullptr,&bitmap,DIB_RGB_COLORS,&pixels,nullptr,0);Check(dc&&image&&pixels);
-    auto old=SelectObject(dc,image);RECT client={0,0,640,220};InjectorUiState paint_state;paint_state.main_status=L"首次使用，请手动启动原神。正在等待游戏启动。";
+    auto old=SelectObject(dc,image);RECT client={0,0,kInjectorDesignWidth,kInjectorDesignHeight};InjectorUiState paint_state;paint_state.main_status=L"首次使用，请手动启动原神。正在等待游戏启动。";
     InjectorUiRenderer painter;
     // Measure lifetime after GDI has initialized its process-wide drawing resources.
     painter.Paint(dc,client,paint_state);painter.Reset();GdiFlush();
     DWORD initial_objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
     painter.Paint(dc,client,paint_state);GdiFlush();
-    std::vector<BYTE> first((BYTE*)pixels,(BYTE*)pixels+640*220*4);
+    std::vector<BYTE> first((BYTE*)pixels,(BYTE*)pixels+client.right*client.bottom*4);
     DWORD objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
     for(unsigned i=0;i<40;i++)painter.Paint(dc,client,paint_state);
     GdiFlush();Check(!memcmp(first.data(),pixels,first.size()));

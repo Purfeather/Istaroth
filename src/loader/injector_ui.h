@@ -7,7 +7,7 @@ namespace istaroth {
 enum class InjectorStage { Checking, WaitingGame, CheckingGame, Terminating, Starting, Waiting, Complete, Failed, Cancelled };
 
 constexpr int kInjectorDesignWidth = 640;
-constexpr int kInjectorDesignHeight = 220;
+constexpr int kInjectorDesignHeight = 174;
 
 struct InjectorUiState {
     InjectorStage stage = InjectorStage::Checking;
@@ -31,7 +31,6 @@ public:
 private:
     HDC surface = nullptr;
     HBITMAP bitmap = nullptr;
-    HICON icon = nullptr;
     SIZE size{};
     InjectorUiState previous;
 };

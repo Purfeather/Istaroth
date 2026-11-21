@@ -91,7 +91,7 @@ try {
     foreach ($name in $payloadNames) { $hash=(Get-FileHash "$out/$name").Hash.ToLowerInvariant(); $header += '{L"' + $name + '","' + $hash + '"},' }; $header += '};'
     [IO.File]::WriteAllLines("$out/resident_payloads.h",$header)
     Run 'rc.exe' @('/nologo',('/i' + "$root/assets"),('/fo' + "$out/injector.res"),'src/loader/injector.rc')
-    $loaderLibraries = @('bcrypt.lib','psapi.lib','shell32.lib','user32.lib','gdi32.lib')
+    $loaderLibraries = @('bcrypt.lib','psapi.lib','shell32.lib','user32.lib','gdi32.lib','dwmapi.lib')
     CompileCpp 'Istaroth.exe' (@('src/loader/istaroth_injector.cpp','src/loader/injector_ui.cpp',"$out/injector.res") + $loaderLibraries + @('/link','/SUBSYSTEM:WINDOWS','/MANIFEST:EMBED',"/MANIFESTUAC:level='requireAdministrator' uiAccess='false'"))
     Copy-Item 'assets/istaroth-mark.png' "$out/assets/istaroth-mark.png" -Force
     CompileCpp 'tests/control-test.exe' @('tests/control_test.cpp')
