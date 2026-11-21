@@ -30,7 +30,7 @@ int ProgressStep(InjectorStage stage) {
 const wchar_t* Hint(const InjectorUiState& state) {
     if (!state.detail_hint.empty()) return state.detail_hint.c_str();
     if (state.stage == InjectorStage::WaitingGame)
-        return L"游戏启动后，伊斯塔露会自动加载。关闭此窗口可取消等待。";
+        return L"游戏启动后，伊斯塔露会自动加载。关闭此窗口可取消启动，不影响游戏。";
     if (state.stage == InjectorStage::Waiting)
         return L"菜单准备好后，此窗口会自动关闭。功能默认暂停，进入游戏后按 Insert 打开菜单，再点“启用”。";
     if (state.stage == InjectorStage::Terminating)
