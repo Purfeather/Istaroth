@@ -1,5 +1,6 @@
 #include "injector_ui.h"
 #include <dwmapi.h>
+#include <shellscalingapi.h>
 #include <algorithm>
 #include <cmath>
 
@@ -54,7 +55,7 @@ void Text(HDC dc, RECT rect, const wchar_t* value, COLORREF color, UINT flags) {
     DrawTextW(dc, value, -1, &rect, flags | DT_NOPREFIX);
 }
 
-void Draw(HDC dc, int width, int height, const InjectorUiState& state) {
+void Draw(HDC dc, int width, int height, HICON portrait, const InjectorUiState& state) {
     const double scale = (std::min)(double(width) / kInjectorDesignWidth,
                                     double(height) / kInjectorDesignHeight);
     auto px = [scale](int value) { return static_cast<int>(std::lround(value * scale)); };
@@ -70,17 +71,30 @@ void Draw(HDC dc, int width, int height, const InjectorUiState& state) {
     Fill(dc, {0, 0, width, bottom_band}, background);
     Fill(dc, {0, bottom_band, width, height}, footer);
 
+    int text_right = right;
+    if (portrait && !failed) {
+        const int side = px(72);
+        const int x = right - side, y = (bottom_band - side) / 2;
+        HRGN circle = CreateEllipticRgn(x, y, right, y + side);
+        const int layer = SaveDC(dc);
+        if (circle && layer && ExtSelectClipRgn(dc, circle, RGN_AND) != ERROR &&
+            DrawIconEx(dc, x, y, portrait, side, side, 0, nullptr, DI_NORMAL))
+            text_right = x - px(18);
+        if (layer) RestoreDC(dc, layer);
+        if (circle) DeleteObject(circle);
+    }
+
     HFONT regular = font(14, FW_NORMAL);
     HFONT heading = font(23, FW_SEMIBOLD);
     auto original_font = SelectObject(dc, regular);
     SelectObject(dc, heading);
-    RECT title{left, px(19), right, bottom_band};
+    RECT title{left, px(19), text_right, bottom_band};
     RECT measured = title;
     DrawTextW(dc, state.main_status.c_str(), -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
     title.bottom = (std::min)(measured.bottom, static_cast<LONG>(bottom_band - px(46)));
     Text(dc, title, state.main_status.c_str(), failed ? fault : primary, DT_WORDBREAK | DT_END_ELLIPSIS);
     SelectObject(dc, regular);
-    Text(dc, {left, title.bottom + px(6), right, bottom_band - px(4)}, Hint(state), secondary, DT_WORDBREAK);
+    Text(dc, {left, title.bottom + px(6), text_right, bottom_band - px(4)}, Hint(state), secondary, DT_WORDBREAK);
 
     if (step >= 0) {
         const wchar_t* labels[] = {L"检查文件", L"确认游戏", L"加载游戏内功能"};
@@ -121,11 +135,22 @@ HWND CreateInjectorWindow(HINSTANCE instance, WNDPROC window_proc) {
     if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return nullptr;
 
     constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    const UINT dpi = GetDpiForSystem();
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(info)};
+    if (!GetMonitorInfoW(monitor, &info)) return nullptr;
+    UINT dpi = 0, dpi_y = 0;
+    if (FAILED(GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpi, &dpi_y))) dpi = GetDpiForSystem();
     RECT bounds{0, 0, MulDiv(kInjectorDesignWidth, dpi, 96), MulDiv(kInjectorDesignHeight, dpi, 96)};
     if (!AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, dpi)) return nullptr;
-    HWND window = CreateWindowW(wc.lpszClassName, L"伊斯塔露加载器", style, CW_USEDEFAULT, CW_USEDEFAULT,
-                         bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, instance, nullptr);
+    const RECT& work = info.rcWork;
+    const LONG work_width = work.right - work.left, work_height = work.bottom - work.top;
+    const LONG width = (std::min)(bounds.right - bounds.left, work_width);
+    const LONG height = (std::min)(bounds.bottom - bounds.top, work_height);
+    HWND window = CreateWindowW(wc.lpszClassName, L"伊斯塔露加载器", style,
+                                work.left + (work_width - width) / 2, work.top + (work_height - height) / 2,
+                                width, height, nullptr, nullptr, instance, nullptr);
     if (window) {
         HIGHCONTRASTW contrast{sizeof(contrast)};
         if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) &&
@@ -144,6 +169,8 @@ InjectorUiRenderer::~InjectorUiRenderer() { Reset(); }
 void InjectorUiRenderer::Reset() {
     if (surface) DeleteDC(surface);
     if (bitmap) DeleteObject(bitmap);
+    if (portrait) DestroyIcon(portrait);
+    portrait = nullptr;
     surface = nullptr;
     bitmap = nullptr;
     size = {};
@@ -159,15 +186,18 @@ void InjectorUiRenderer::Paint(HDC dc, const RECT& client, const InjectorUiState
         bitmap = CreateCompatibleBitmap(dc, width, height);
         if (!surface || !bitmap || !SelectObject(surface, bitmap)) {
             Reset();
-            Draw(dc, width, height, state);
+            Draw(dc, width, height, nullptr, state);
             return;
         }
+        const double scale = (std::min)(double(width) / kInjectorDesignWidth, double(height) / kInjectorDesignHeight);
+        int side = (std::max)(1L, std::lround(72 * scale));
+        portrait = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101), IMAGE_ICON, side, side, 0));
         size = {width, height};
     }
     if (resized || previous.stage != state.stage || previous.main_status != state.main_status ||
         previous.detail_hint != state.detail_hint || previous.error_code != state.error_code ||
         previous.load_started != state.load_started) {
-        Draw(surface, width, height, state);
+        Draw(surface, width, height, portrait, state);
         previous = state;
     }
     BitBlt(dc, client.left, client.top, width, height, surface, 0, 0, SRCCOPY);

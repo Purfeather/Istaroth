@@ -93,6 +93,10 @@ int wmain() {
     Write(game,std::string(8*1024*1024,'x'));Write(wrong,"not a game");
     progress=CreateInjectorWindow(GetModuleHandleW(nullptr),Window);close_window=progress;
     Check(progress!=nullptr);Check((GetWindowLongPtrW(progress,GWL_STYLE)&WS_SYSMENU)!=0);
+    MONITORINFO screen{sizeof(screen)};RECT placed{};
+    Check(GetMonitorInfoW(MonitorFromWindow(progress,MONITOR_DEFAULTTONEAREST),&screen)&&GetWindowRect(progress,&placed));
+    Check(abs((placed.left-screen.rcWork.left)-(screen.rcWork.right-placed.right))<=1);
+    Check(abs((placed.top-screen.rcWork.top)-(screen.rcWork.bottom-placed.bottom))<=1);
     for(int size:{16,24,32,48,64,128,256}) {
         HICON icon=(HICON)LoadImageW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(101),IMAGE_ICON,size,size,0);Check(icon!=nullptr);
         ICONINFO info{};Check(GetIconInfo(icon,&info)!=FALSE);BITMAP color{};GetObjectW(info.hbmColor,sizeof(color),&color);Check(color.bmWidth==size&&color.bmHeight==size);
