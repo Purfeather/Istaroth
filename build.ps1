@@ -84,7 +84,20 @@ try {
         Run 'python' @('-B','tools/embed_icon.py',$root,$out)
         $slimFlags = @('/DISTAROTH_EMBED_ICON')
     }
-    CompileCpp 'Istaroth.dll' (@('/LD','src/resident/resident.cpp','src/resident/resident_renderer.cpp') + $slimFlags + $uiSources + @('/link','/INCREMENTAL:NO',$detours) + $uiLibraries)
+    $peerHeader = @('#pragma once', 'struct PinnedPeer { const wchar_t* name; const char* sha256; };')
+    $peers = [ordered]@{
+        ClockPeer = 'time_core.dll'
+        StoryPeer = 'story_probe.dll'
+        ActionPeer = 'dialogue_actions.dll'
+        TestClockPeer = 'tests/time_core_test.dll'
+    }
+    foreach ($peer in $peers.GetEnumerator()) {
+        $name = [IO.Path]::GetFileName($peer.Value)
+        $hash = (Get-FileHash (Join-Path $out $peer.Value)).Hash.ToLowerInvariant()
+        $peerHeader += ('static constexpr PinnedPeer {0} = {{L"{1}", "{2}"}};' -f $peer.Key,$name,$hash)
+    }
+    [IO.File]::WriteAllLines("$out/verified_peers.h",$peerHeader)
+    CompileCpp 'Istaroth.dll' (@('/LD','src/resident/resident.cpp','src/resident/resident_renderer.cpp') + $slimFlags + $uiSources + @('/link','/INCREMENTAL:NO',$detours) + $uiLibraries + @('bcrypt.lib'))
     $profile = Get-Content 'profiles/compatibility.json' -Raw | ConvertFrom-Json
     $payloadNames = @('Istaroth.dll','time_core.dll','story_probe.dll','dialogue_actions.dll')
     $header = @('#pragma once','struct Payload { const wchar_t* name; const char* sha256; };',('static const wchar_t* TargetName=L"' + $profile.executable + '";'),('static const char* TargetSha256="' + $profile.sha256 + '";'),'static const wchar_t* ResidentPayload=L"Istaroth.dll";','static const Payload Payloads[]={')

@@ -15,9 +15,27 @@ static std::wstring observed_path,command_line=L"OwnedLoader.exe";
 static HWND close_window=nullptr;
 static bool cancel_read=false,thread_saw_memory=false,entry_title_ok=false;
 static unsigned reads=0;
+static DWORD forced_read_error=0;
+static bool close_handled_during_read=false;
+static std::wstring last_dialog;
+static std::vector<std::wstring> files_to_check;
+static unsigned protected_files=0;
 static void* thread_memory=nullptr;
 static LPWSTR FakeCommandLine(){return command_line.data();}
-static HANDLE WINAPI FakeSnapshot(DWORD,DWORD){return CreateEventW(nullptr,TRUE,FALSE,nullptr);}
+static BOOL CALLBACK CloseEntryWindow(HWND window,LPARAM);
+static HANDLE WINAPI FakeSnapshot(DWORD,DWORD) {
+    for(const auto& path:files_to_check) {
+        HANDLE attempt=CreateFileW(path.c_str(),GENERIC_WRITE|DELETE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                                   nullptr,OPEN_EXISTING,0,nullptr);
+        if(attempt==INVALID_HANDLE_VALUE && GetLastError()==ERROR_SHARING_VIOLATION) ++protected_files;
+        if(attempt!=INVALID_HANDLE_VALUE) CloseHandle(attempt);
+    }
+    if (!files_to_check.empty()) {
+        files_to_check.clear();
+        EnumThreadWindows(main_thread,CloseEntryWindow,0);
+    }
+    return CreateEventW(nullptr,TRUE,FALSE,nullptr);
+}
 static BOOL WINAPI FakeFirst(HANDLE,PROCESSENTRY32W* entry){target_index=0;wcscpy_s(entry->szExeFile,L"other.exe");return TRUE;}
 static BOOL WINAPI FakeNext(HANDLE,PROCESSENTRY32W* entry) {
     if(target_index==targets.size()){SetLastError(ERROR_NO_MORE_FILES);return FALSE;}
@@ -35,12 +53,19 @@ static BOOL WINAPI FakeProcessPath(HANDLE process,DWORD flags,LPWSTR buffer,PDWO
     }
     return QueryFullProcessImageNameW(process,flags,buffer,size);
 }
-static int WINAPI FakeMessageBox(HWND window,LPCWSTR,LPCWSTR,UINT) {
+static int WINAPI FakeMessageBox(HWND window,LPCWSTR text,LPCWSTR,UINT) {
+    last_dialog=text;
     wchar_t title[80]={};GetWindowTextW(window,title,80);entry_title_ok=!wcscmp(title,L"伊斯塔露加载器");return IDOK;
 }
 static BOOL WINAPI FakeReadFile(HANDLE file,LPVOID buffer,DWORD size,LPDWORD read,LPOVERLAPPED overlapped) {
-    BOOL result=ReadFile(file,buffer,size,read,overlapped);
-    if(cancel_read&&++reads==2)PostMessageW(close_window,WM_CLOSE,0,0);return result;
+    if(forced_read_error){SetLastError(forced_read_error);return FALSE;}
+    if(cancel_read&&++reads==2) {
+        DWORD_PTR reply=0;
+        close_handled_during_read=GetCurrentThreadId()!=main_thread &&
+            SendMessageTimeoutW(close_window,WM_CLOSE,0,0,SMTO_BLOCK,2000,&reply)!=0;
+        if(!close_handled_during_read)PostMessageW(close_window,WM_CLOSE,0,0);
+    }
+    return ReadFile(file,buffer,size,read,overlapped);
 }
 static DWORD WINAPI OwnedThread(void* memory) {
     Sleep(100);MEMORY_BASIC_INFORMATION info{};thread_saw_memory=VirtualQuery(memory,&info,sizeof(info))&&info.State==MEM_COMMIT;return 0;
@@ -50,7 +75,6 @@ static BOOL CALLBACK CloseEntryWindow(HWND window,LPARAM) {
     wchar_t name[80]={};GetClassNameW(window,name,80);
     if(!wcscmp(name,L"Istaroth.Injector")){PostMessageW(window,WM_CLOSE,0,0);return FALSE;}return TRUE;
 }
-static DWORD WINAPI CloseEntryLater(void*){Sleep(200);EnumThreadWindows(main_thread,CloseEntryWindow,0);return 0;}
 static HANDLE WINAPI FakeRemoteThread(HANDLE process,LPSECURITY_ATTRIBUTES attributes,SIZE_T stack,LPTHREAD_START_ROUTINE,LPVOID memory,DWORD flags,LPDWORD tid) {
     if(GetProcessId(process)!=GetCurrentProcessId()){SetLastError(ERROR_ACCESS_DENIED);return nullptr;}
     thread_starts++;thread_memory=memory;PostMessageW(close_window,WM_CLOSE,0,0);return CreateThread(attributes,stack,OwnedThread,memory,flags,tid);
@@ -143,12 +167,41 @@ int wmain() {
     std::wstring unicode_dir=directory+L"\u8def\u5f84 \U0001f31f\\";Check(CreateDirectoryW(unicode_dir.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS);
     std::wstring unicode_game=unicode_dir+TargetName;Write(unicode_game,"Unicode path");DeleteFileW(ini.c_str());path_discovered=true;SaveGamePath(unicode_game);Check(ConfiguredGamePath()==unicode_game);
     FileHasher verifier;
-    Write(wrong,"");Check(verifier.Sha256(wrong)=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    Write(wrong,"abc");Check(verifier.Sha256(wrong)=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    Reset();Check(verifier.Sha256(game)=="0c77bc0a0795a93612d45256897456d0fcb24f151c44c150d07ecd03f4ef5168");DWORD before=0,after=0;GetProcessHandleCount(GetCurrentProcess(),&before);cancel_read=true;reads=0;Expect(ERROR_CANCELLED,[&]{verifier.Sha256(game);});cancel_read=false;
+    auto digest=[&](const std::wstring& path) {
+        std::string result;
+        VerifyInBackground([&](const std::atomic_bool& stop) {
+            auto file=OpenReadOnly(path);
+            result=verifier.Sha256(file.get(),stop);
+        });
+        return result;
+    };
+    {
+        const std::atomic_bool running{false};
+        Write(wrong,"abc");
+        constexpr char expected[]="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        auto pinned=verifier.Verify(wrong,expected,running);
+        Check(!FinalFilePath(pinned.get()).empty());
+        for(DWORD access : {DWORD(GENERIC_WRITE), DWORD(DELETE)}) {
+            HANDLE attempt=CreateFileW(wrong.c_str(),access,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                                       nullptr,OPEN_EXISTING,0,nullptr);
+            Check(attempt==INVALID_HANDLE_VALUE&&GetLastError()==ERROR_SHARING_VIOLATION);
+        }
+        pinned.reset();
+        Write(wrong,"changed after first verification");
+        bool rejected=false;
+        try { verifier.Verify(wrong,expected,running); }
+        catch(const DigestMismatch&) { rejected=true; }
+        Check(rejected);
+    }
+    Reset();
+    forced_read_error=ERROR_READ_FAULT;Expect(ERROR_READ_FAULT,[&]{digest(wrong);});forced_read_error=0;
+    Write(wrong,"");Check(digest(wrong)=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    Write(wrong,"abc");Check(digest(wrong)=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    Reset();Check(digest(game)=="0c77bc0a0795a93612d45256897456d0fcb24f151c44c150d07ecd03f4ef5168");DWORD before=0,after=0;GetProcessHandleCount(GetCurrentProcess(),&before);cancel_read=true;reads=0;Expect(ERROR_CANCELLED,[&]{digest(game);});cancel_read=false;Check(close_handled_during_read);
     GetProcessHandleCount(GetCurrentProcess(),&after);Check(before==after);Check(!load_started&&!runtime_ready);
-    Reset();cancel_requested=true;Expect(ERROR_CANCELLED,[]{Load(GetCurrentProcess());});Check(thread_starts==0);
-    Reset();Expect(ERROR_CANCELLED,[]{Load(GetCurrentProcess());});Check(thread_starts==1&&load_started&&thread_saw_memory);
+    ScopedHandle pending_use;
+    Reset();cancel_requested=true;Expect(ERROR_CANCELLED,[&]{Load(GetCurrentProcess(),wrong,pending_use);});Check(thread_starts==0);
+    Reset();Expect(ERROR_CANCELLED,[&]{Load(GetCurrentProcess(),wrong,pending_use);});Check(thread_starts==1&&load_started&&thread_saw_memory);
     MEMORY_BASIC_INFORMATION memory{};Check(VirtualQuery(thread_memory,&memory,sizeof(memory))&&memory.State==MEM_FREE);
     Reset();HANDLE guard=ClaimGame();Check(guard!=nullptr);Expect(ERROR_ALREADY_EXISTS,[]{HANDLE other=ClaimGame();CloseHandle(other);});CloseHandle(guard);
     wchar_t map_name[100];swprintf_s(map_name,L"Local\\Istaroth.Runtime.%lu",game_pid);
@@ -175,20 +228,35 @@ int wmain() {
     std::wstring first_payload=entry_dir+Payloads[0].name;
     Check(DeleteFileW(first_payload.c_str())!=FALSE);
     Check(entry(L"OwnedLoader.exe")==ERROR_FILE_NOT_FOUND);
-    Write(first_payload,"damaged payload");
+    forced_read_error=ERROR_READ_FAULT;
+    Check(CopyFileW((payload_dir+Payloads[0].name).c_str(),first_payload.c_str(),FALSE)!=FALSE);
+    Check(entry(L"OwnedLoader.exe")==ERROR_READ_FAULT);
+    Check(last_dialog.find(L"错误代码 30")!=std::wstring::npos);
+    forced_read_error=ERROR_CRC;
     Check(entry(L"OwnedLoader.exe")==ERROR_CRC);
+    Check(last_dialog.find(L"重新解压")==std::wstring::npos && last_dialog.find(L"完整解压")==std::wstring::npos);
+    forced_read_error=0;
+    Write(first_payload,"damaged payload");
+    Check(entry(L"OwnedLoader.exe")==ERROR_CRC);Check(last_dialog.find(L"完整解压")!=std::wstring::npos);
     Check(process_starts==0&&terminations==0);
     Check(CopyFileW((payload_dir+Payloads[0].name).c_str(),first_payload.c_str(),FALSE)!=FALSE);
     DeleteFileW(entry_ini.c_str());Check(entry(L"OwnedLoader.exe --quiet")==ERROR_PATH_NOT_FOUND);
     Check(entry(L"OwnedLoader.exe --quiet --invalid")==ERROR_INVALID_PARAMETER);
-    HANDLE closer=CreateThread(nullptr,0,CloseEntryLater,nullptr,0,nullptr);Check(closer!=nullptr);Check(entry(L"OwnedLoader.exe")==ERROR_CANCELLED);WaitForSingleObject(closer,1000);CloseHandle(closer);
+    for(const auto& payload:Payloads) files_to_check.push_back(entry_dir+payload.name);
+    Check(entry(L"OwnedLoader.exe")==ERROR_CANCELLED);
+    Check(protected_files==sizeof(Payloads)/sizeof(Payloads[0]));
+    for(const auto& payload:Payloads) {
+        HANDLE released=CreateFileW((entry_dir+payload.name).c_str(),GENERIC_WRITE|DELETE,FILE_SHARE_READ,
+                                    nullptr,OPEN_EXISTING,0,nullptr);
+        Check(released!=INVALID_HANDLE_VALUE);CloseHandle(released);
+    }
     Check(GetFileAttributesW(entry_ini.c_str())==INVALID_FILE_ATTRIBUTES);
     WritePrivateProfileStringW(L"Istaroth",L"GamePath",game.c_str(),entry_ini.c_str());Check(entry(L"OwnedLoader.exe --quiet")==ERROR_REVISION_MISMATCH);
     Check(entry(L"OwnedLoader.exe")==ERROR_REVISION_MISMATCH);Check(entry_title_ok);
     Check(process_starts==0&&terminations==0&&thread_starts==1&&!load_started&&!runtime_ready);
-    auto previous_receipt=verifier.Sha256(entry_dir+L"Istaroth-injector-result.json");
+    auto previous_receipt=digest(entry_dir+L"Istaroth-injector-result.json");
     Check(entry(L"OwnedLoader.exe --diagnostics --quiet")==0);
-    Check(verifier.Sha256(entry_dir+L"Istaroth-injector-result.json")==previous_receipt);
+    Check(digest(entry_dir+L"Istaroth-injector-result.json")==previous_receipt);
     WIN32_FIND_DATAW report{};HANDLE reports=FindFirstFileW((entry_dir+L"reports\\Istaroth-report-*.txt").c_str(),&report);
     Check(reports!=INVALID_HANDLE_VALUE);if(reports!=INVALID_HANDLE_VALUE)FindClose(reports);
     Check(entry(L"OwnedLoader.exe --diagnostics --quiet --restart")==ERROR_INVALID_PARAMETER);

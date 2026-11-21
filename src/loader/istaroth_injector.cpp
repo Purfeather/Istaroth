@@ -9,12 +9,15 @@
 #include <vector>
 #include <cstdio>
 #include <algorithm>
-#include <memory>
+#include <atomic>
+#include <thread>
+#include <exception>
 #include "resident_protocol.h"
 #include "resident_payloads.h"
 #include "injector_ui.h"
 #include "diagnostics.h"
 #include "diagnostic_report.h"
+#include "file_integrity.h"
 using namespace istaroth;
 
 static std::wstring directory;
@@ -93,47 +96,40 @@ static LRESULT CALLBACK Window(HWND window, UINT msg, WPARAM w, LPARAM l) {
     }
     return DefWindowProcW(window, msg, w, l);
 }
-class FileHasher {
-public:
-    std::string Sha256(const std::wstring& path) {
-        CheckCancelled();
-        HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-                                  OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-        if (file == INVALID_HANDLE_VALUE) throw GetLastError();
-
-        BCRYPT_HASH_HANDLE hash = nullptr;
-        BYTE digest[32];
-        bool ok = BCryptCreateHash(BCRYPT_SHA256_ALG_HANDLE, &hash, nullptr, 0, nullptr, 0, 0) >= 0;
-        auto last_pump = GetTickCount64();
-        while (ok && !cancel_requested) {
-            DWORD count = 0;
-            ok = ReadFile(file, buffer.get(), chunk_size, &count, nullptr) != FALSE;
-            if (!ok || !count) break;
-            ok = BCryptHashData(hash, buffer.get(), count, 0) >= 0;
-            if (GetTickCount64() - last_pump > 100) {
-                Pump();
-                last_pump = GetTickCount64();
-            }
+// Only the main thread dispatches window messages or changes the launch state.
+template<class Work>
+static void VerifyInBackground(Work work) {
+    CheckCancelled();
+    std::atomic_bool stop{false};
+    std::exception_ptr failure;
+    std::thread worker([&] {
+        try { work(stop); }
+        catch (...) { failure = std::current_exception(); }
+    });
+    HANDLE thread = worker.native_handle();
+    DWORD wait_error = ERROR_SUCCESS;
+    for (;;) {
+        DWORD result = MsgWaitForMultipleObjectsEx(1, &thread, stop ? 50 : INFINITE,
+                                                   QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        if (result == WAIT_OBJECT_0) break;
+        if (result == WAIT_FAILED) {
+            wait_error = GetLastError();
+            stop = true;
+            CancelSynchronousIo(thread);
+            break;
         }
-        if (ok && !cancel_requested) ok = BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0;
-        if (hash) BCryptDestroyHash(hash);
-        CloseHandle(file);
-        CheckCancelled();
-        if (!ok) throw (DWORD)ERROR_CRC;
-
-        constexpr char digits[] = "0123456789abcdef";
-        std::string result(sizeof(digest) * 2, '0');
-        for (size_t i = 0; i < sizeof(digest); ++i) {
-            result[2 * i] = digits[digest[i] >> 4];
-            result[2 * i + 1] = digits[digest[i] & 15];
+        Pump();
+        if (cancel_requested) {
+            stop = true;
+            // Retry if cancellation raced with the worker about to enter a blocking read.
+            CancelSynchronousIo(thread);
         }
-        return result;
     }
-
-private:
-    static constexpr DWORD chunk_size = 1024 * 1024;
-    std::unique_ptr<BYTE[]> buffer{new BYTE[chunk_size]};
-};
+    worker.join();
+    CheckCancelled();
+    if (wait_error) throw wait_error;
+    if (failure) std::rethrow_exception(failure);
+}
 
 static bool GamePath(const std::wstring& input,std::wstring& full) {
     if(input.empty())return false;
@@ -264,9 +260,9 @@ static LPTHREAD_START_ROUTINE Loader(HANDLE process) {
     }
     RequireAlive(process);throw (DWORD)ERROR_MOD_NOT_FOUND;
 }
-static void Load(HANDLE process) {
+static void Load(HANDLE process, const std::wstring& path, ScopedHandle& pending_use) {
     CheckCancelled();
-    auto entry=Loader(process);std::wstring path=directory+ResidentPayload;SIZE_T bytes=(path.size()+1)*sizeof(wchar_t),written=0;
+    auto entry=Loader(process);SIZE_T bytes=(path.size()+1)*sizeof(wchar_t),written=0;
     operation="preparing_load";RequireAlive(process);
     void* memory=VirtualAllocEx(process,nullptr,bytes,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
     if(!memory){DWORD error=GetLastError();RequireAlive(process);throw error;}
@@ -280,7 +276,14 @@ static void Load(HANDLE process) {
         uint64_t end=GetTickCount64()+10000;
         while(GetTickCount64()<end) {if(WaitForSingleObject(thread,20)==WAIT_OBJECT_0){completed=true;break;}Pump();}
         if(!completed)throw (DWORD)ERROR_TIMEOUT;
-    } catch(...) {if(thread)CloseHandle(thread);if(completed||!thread)VirtualFreeEx(process,memory,0,MEM_RELEASE);throw;}
+    } catch(...) {
+        if(thread && !completed) pending_use.reset(thread);
+        else {
+            if(thread) CloseHandle(thread);
+            VirtualFreeEx(process,memory,0,MEM_RELEASE);
+        }
+        throw;
+    }
     CloseHandle(thread);VirtualFreeEx(process,memory,0,MEM_RELEASE);CheckCancelled();
 }
 static void AwaitReady(HANDLE process) {
@@ -331,6 +334,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         ShowWindow(progress, SW_SHOW);
         UpdateWindow(progress);
     }
+    bool digest_mismatch = false;
+    std::vector<ScopedHandle> verified_files;
+    ScopedHandle pending_use;
     HANDLE process=nullptr,injection_guard=nullptr;
     try {
         if(error)throw error;
@@ -342,14 +348,26 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
 #endif
         operation="validating_payloads";Trace("started");
         FileHasher verifier;
-        for(auto payload:Payloads)if(verifier.Sha256(directory+payload.name)!=payload.sha256)throw (DWORD)ERROR_CRC;
+        std::wstring verified_resident_path;
+        VerifyInBackground([&](const std::atomic_bool& stop) {
+            for (const auto& payload : Payloads) {
+                auto file = verifier.Verify(directory + payload.name, payload.sha256, stop);
+                if (!wcscmp(payload.name, ResidentPayload)) verified_resident_path = FinalFilePath(file.get());
+                verified_files.push_back(std::move(file));
+            }
+        });
+        if (verified_resident_path.empty()) throw (DWORD)ERROR_INVALID_DATA;
         const bool first_run=game.empty();
         for(;;) {try {
         if(game.empty())process=WaitForGame(game);
         operation="validating_game";
         Progress(L"正在检查《原神》的版本", InjectorStage::CheckingGame);
         const wchar_t* base=wcsrchr(game.c_str(),L'\\');base=base?base+1:game.c_str();
-        if(_wcsicmp(base,TargetName)||verifier.Sha256(game)!=TargetSha256)throw (DWORD)ERROR_REVISION_MISMATCH;
+        if (_wcsicmp(base, TargetName)) throw (DWORD)ERROR_REVISION_MISMATCH;
+        VerifyInBackground([&](const std::atomic_bool& stop) {
+            auto file = OpenReadOnly(game);
+            if (verifier.Sha256(file.get(), stop) != TargetSha256) throw (DWORD)ERROR_REVISION_MISMATCH;
+        });
         if(!process) {
             operation="starting_game";
             Existing(game,restart);Progress(L"正在启动《原神》",InjectorStage::Starting);
@@ -359,7 +377,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
             process=info.hProcess;CloseHandle(info.hThread);game_pid=info.dwProcessId;game_birth=Birth(process);
         } else Progress(L"已找到《原神》，正在加载伊斯塔露",InjectorStage::Starting);
         RequireAlive(process);if(_wcsicmp(ProcessPath(process).c_str(),game.c_str()))throw (DWORD)ERROR_INVALID_NAME;
-        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process);Progress(L"正在等待游戏内菜单",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
+        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process,verified_resident_path,pending_use);Progress(L"正在等待游戏内菜单",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
         }catch(DWORD value) {
             if(value==ERROR_ELEVATION_REQUIRED&&first_run&&!load_started&&!handover_count&&process&&
                WaitForSingleObject(process,0)==WAIT_OBJECT_0&&GetExitCodeProcess(process,&child_exit)&&child_exit==ElevationExit) {
@@ -370,7 +388,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
             }
             throw;
         }}
-    } catch(DWORD value) {error=value;}catch(...) {error=ERROR_UNHANDLED_EXCEPTION;}
+    } catch (const DigestMismatch&) {digest_mismatch=true;error=ERROR_CRC;}
+    catch(DWORD value) {error=value;}catch(...) {error=ERROR_UNHANDLED_EXCEPTION;}
+    if(!pending_use) verified_files.clear();
     if(cancel_requested)error=ERROR_CANCELLED;
     if(!error&&!runtime_ready)error=ERROR_DLL_INIT_FAILED;
     Trace(error?"failed":"ready",error);
@@ -378,9 +398,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     if(process){GetExitCodeProcess(process,&child_exit);CloseHandle(process);}Receipt(error);
     if(error&&!quiet&&error!=ERROR_CANCELLED) {
         const wchar_t* hint = L"请打开加载器所在文件夹，查看 Istaroth-injector.log 中的错误记录。";
-        if (runtime_ready && !strcmp(operation, "saving_path"))
+        if (pending_use)
+            hint = L"等待组件加载超时。关闭提示后，加载器会在后台保护已校验的文件，直到本次加载结束。退出游戏后即可重试。";
+        else if (runtime_ready && !strcmp(operation, "saving_path"))
             hint = L"游戏内功能已加载，但游戏路径未能保存到 Istaroth.ini。请检查加载器所在文件夹是否可写。";
-        else if (!strcmp(operation, "validating_payloads") && (error == ERROR_FILE_NOT_FOUND || error == ERROR_CRC))
+        else if (!strcmp(operation, "validating_payloads") && (error == ERROR_FILE_NOT_FOUND || digest_mismatch))
             hint = L"伊斯塔露的文件缺失或未通过校验。请将同一版本的压缩包完整解压到一个文件夹，再打开加载器。";
         else if (error == ERROR_REVISION_MISMATCH)
             hint = !strcmp(operation, "validating_game")
@@ -408,5 +430,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         DestroyWindow(progress);
         progress = nullptr;
     }
+    // A timeout ends the UI wait. Keep the verified files pinned while the
+    // outstanding request can still open the primary DLL by name.
+    if (pending_use) WaitForSingleObject(pending_use.get(), INFINITE);
     return (int)error;
 }

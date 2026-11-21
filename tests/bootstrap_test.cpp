@@ -14,6 +14,8 @@ static unsigned generation=0,enumeration=0,loads=0,foreign_access=0;
 static std::wstring fixture_path,mode;
 static std::atomic<bool> live_exited=false;
 static bool close_sent=false;
+static HANDLE pending_event=nullptr;
+static bool pinned_after_close=false;
 static LPWSTR FakeCommandLine();
 static HANDLE WINAPI FakeSnapshot(DWORD,DWORD);
 static BOOL WINAPI FakeFirst(HANDLE,PROCESSENTRY32W*);
@@ -87,7 +89,17 @@ static HANDLE WINAPI FakeOpen(DWORD access,BOOL inherit,DWORD pid) {
     foreign_access++;SetLastError(ERROR_ACCESS_DENIED);return nullptr;
 }
 static bool IsSelf(HANDLE process){return GetProcessId(process)==GetCurrentProcessId();}
-static DWORD WINAPI FakeWait(HANDLE handle,DWORD ms){if(IsSelf(handle)&&live_exited)return WAIT_OBJECT_0;return WaitForSingleObject(handle,ms);}
+static DWORD WINAPI FakeWait(HANDLE handle,DWORD ms) {
+    if (handle==pending_event && ms==INFINITE) {
+        HANDLE file=CreateFileW((directory+ResidentPayload).c_str(),GENERIC_WRITE,FILE_SHARE_READ,
+                                nullptr,OPEN_EXISTING,0,nullptr);
+        pinned_after_close=file==INVALID_HANDLE_VALUE && GetLastError()==ERROR_SHARING_VIOLATION && !progress;
+        if(file!=INVALID_HANDLE_VALUE) CloseHandle(file);
+        SetEvent(pending_event);
+    }
+    if(IsSelf(handle)&&live_exited)return WAIT_OBJECT_0;
+    return WaitForSingleObject(handle,ms);
+}
 static BOOL WINAPI FakeExit(HANDLE process,LPDWORD code) {
     if(!IsSelf(process)){*code=mode==L"crash"?0xc0000005:0xc000042c;generation=1;return TRUE;}
     if(live_exited){*code=0xc000042c;return TRUE;}return GetExitCodeProcess(process,code);
@@ -119,7 +131,9 @@ static DWORD WINAPI OwnedLoad(void*) {
 }
 static HANDLE WINAPI FakeRemote(HANDLE process,LPSECURITY_ATTRIBUTES a,SIZE_T stack,LPTHREAD_START_ROUTINE,LPVOID memory,DWORD flags,LPDWORD tid) {
     if(!IsSelf(process)){foreign_access++;SetLastError(ERROR_ACCESS_DENIED);return nullptr;}
-    loads++;return CreateThread(a,stack,OwnedLoad,memory,flags,tid);
+    loads++;
+    if(mode==L"pending-file"){pending_event=CreateEventW(nullptr,TRUE,FALSE,nullptr);return pending_event;}
+    return CreateThread(a,stack,OwnedLoad,memory,flags,tid);
 }
 static BOOL WINAPI DenyCreate(LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION){foreign_access++;SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 static BOOL WINAPI DenyTerminate(HANDLE,UINT){foreign_access++;SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
@@ -141,6 +155,12 @@ int wmain(int argc,wchar_t** argv) {
     else if(mode==L"repeat")pass=pass&&result==ERROR_ELEVATION_REQUIRED&&loads==0&&handover_count==1;
     else if(mode==L"cancel")pass=pass&&result==ERROR_CANCELLED&&loads==0&&handover_count==1;
     else if(mode==L"module-absent")pass=pass&&result==ERROR_MOD_NOT_FOUND&&loads==0&&!handover_count;
+    else if(mode==L"pending-file") {
+        HANDLE file=CreateFileW((directory+ResidentPayload).c_str(),GENERIC_WRITE,FILE_SHARE_READ,
+                                nullptr,OPEN_EXISTING,0,nullptr);
+        pass=pass&&result==ERROR_TIMEOUT&&pinned_after_close&&file!=INVALID_HANDLE_VALUE;
+        if(file!=INVALID_HANDLE_VALUE) CloseHandle(file);
+    }
 #endif
     if(runtime_map)CloseHandle(runtime_map);CloseHandle(stub_event);
     wprintf(L"{\"passed\":%s,\"mode\":\"%s\",\"error\":%lu,\"loads\":%u,\"foreign_access\":%u,\"runtime_ack\":%s}\n",pass?L"true":L"false",mode.c_str(),result,loads,foreign_access,runtime_ready?L"true":L"false");

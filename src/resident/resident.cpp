@@ -5,6 +5,8 @@
 #include <cstdio>
 #include "resident_internal.h"
 #include "diagnostics.h"
+#include "file_integrity.h"
+#include "verified_peers.h"
 
 namespace istaroth {
 HMODULE ResidentModule=nullptr;
@@ -98,7 +100,20 @@ static BOOL CALLBACK FindWindow(HWND window,LPARAM value) {
     }
     return TRUE;
 }
-static bool LoadPeer(const wchar_t* name) {return LoadLibraryW((DataDirectory+name).c_str())!=nullptr;}
+// A late peer can be requested after the launcher has closed. Check it here
+// as well and keep the verified file open until the local library load returns.
+static DWORD LoadPeer(const PinnedPeer& peer) {
+    try {
+        const std::atomic_bool stop{false};
+        FileHasher verifier;
+        auto file = verifier.Verify(DataDirectory + peer.name, peer.sha256, stop);
+        const auto path = FinalFilePath(file.get());
+        if (!LoadLibraryW(path.c_str())) return GetLastError();
+        return ERROR_SUCCESS;
+    } catch (const DigestMismatch&) { return ERROR_CRC; }
+    catch (DWORD error) { return error; }
+    catch (const std::bad_alloc&) { return ERROR_OUTOFMEMORY; }
+}
 static Desired GetDesired() {
     Desired d;d.enabled=enabled!=0;d.target=(unsigned)target;LONG bits=features;
     d.advance=(bits&1)!=0;d.choose=(bits&2)!=0;d.skip=(bits&4)!=0;return d;
@@ -163,9 +178,9 @@ static DWORD WINAPI Run(void*) {
     if(!clock_writer||WaitForSingleObject(clock_writer,0)!=WAIT_OBJECT_0)SetRuntimeError(ERROR_BUSY,"another time writer owns the mailbox");
     if(!external_error) {
 #ifdef ISTAROTH_FIXTURE
-        if(!LoadPeer(L"time_core_test.dll"))SetRuntimeError(GetLastError(),"owned time component load failed");
+        if(DWORD error=LoadPeer(TestClockPeer))SetRuntimeError(error,"owned time component load failed");
 #else
-        if(!LoadPeer(L"time_core.dll"))SetRuntimeError(GetLastError(),"time component load failed");
+        if(DWORD error=LoadPeer(ClockPeer))SetRuntimeError(error,"time component load failed");
 #endif
     }
     HANDLE clock_handle=nullptr,action_handle=nullptr,story_handle=nullptr;
@@ -184,7 +199,9 @@ static DWORD WINAPI Run(void*) {
         if(clock_map&&!peers_loaded) {
             SendClock(false,1);peers_loaded=true;
 #ifndef ISTAROTH_FIXTURE
-            if(!LoadPeer(L"story_probe.dll")||!LoadPeer(L"dialogue_actions.dll"))SetRuntimeError(GetLastError(),"dialogue component load failed");
+            DWORD error = LoadPeer(StoryPeer);
+            if (!error) error = LoadPeer(ActionPeer);
+            if (error) SetRuntimeError(error,"dialogue component load failed");
 #endif
         }
         if(peers_loaded&&!action_map&&!external_error)action_map=(ActionShared*)OpenMap(L"Local\\Istaroth.DialogueActions.",336,FILE_MAP_ALL_ACCESS,action_handle);
