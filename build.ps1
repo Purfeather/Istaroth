@@ -79,6 +79,10 @@ try {
     [IO.File]::WriteAllText("$out/resident_glyphs.h",('static const ImWchar ResidentGlyphs[]={' + ($ranges -join ',') + '};'))
     $uiSources = @('src/resident/resident_ui.cpp','third_party/imgui/imgui.cpp','third_party/imgui/imgui_draw.cpp','third_party/imgui/imgui_tables.cpp','third_party/imgui/imgui_widgets.cpp','third_party/imgui/backends/imgui_impl_win32.cpp','third_party/imgui/backends/imgui_impl_dx11.cpp')
     $uiLibraries = @('d3d11.lib','dxgi.lib','d3dcompiler.lib','user32.lib','gdi32.lib','imm32.lib','dwmapi.lib','windowscodecs.lib','ole32.lib')
+    $fxc = Join-Path $SdkRoot "bin/$sdkVersion/x64/fxc.exe"
+    $blurShader = 'src/resident/scene_blur.hlsl'
+    Run $fxc @('/nologo','/O3','/T','vs_4_0','/E','vertex','/Vn','BlurVertexShader','/Fh',"$out/scene_blur_vs.h",$blurShader)
+    Run $fxc @('/nologo','/O3','/T','ps_4_0','/E','pixel','/Vn','BlurPixelShader','/Fh',"$out/scene_blur_ps.h",$blurShader)
     $slimFlags = @()
     if ($Slim) {
         Run 'python' @('-B','tools/embed_icon.py',$root,$out)

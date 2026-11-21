@@ -6,6 +6,7 @@
 #include <wrl/client.h>
 #include <vector>
 #include <filesystem>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include "imgui.h"
@@ -99,6 +100,26 @@ static void BlurChecks() {
     if(maximum-minimum>=48)fprintf(stderr,"blur contrast min=%u max=%u samples=%u,%u,%u,%u\n",minimum,maximum,all[(32*128+60)*4],all[(32*128+61)*4],all[(32*128+62)*4],all[(32*128+63)*4]);Check(maximum-minimum<48);
     Hr(partial.Draw(device.Get(),context.Get(),input.Get(),{200,100,312,164},1.5f,&output));auto region=Read(Resource(output).Get());
     for(UINT y:{25u,32u,40u})for(UINT x:{50u,64u,77u})Check(abs((int)region[(y*128+x)*4]-all[(y*128+x)*4])<=2);
+    // A sharp edge makes stale weights visible when a wide kernel is replaced by a narrow one.
+    auto edge = Fill(96,64,0,0,0);
+    for (UINT y=0; y<64; ++y) for (UINT x=48; x<96; ++x)
+        edge[(y*96+x)*4] = 255;
+    auto edge_input = Texture(96,64,DXGI_FORMAT_R8G8B8A8_UNORM,&edge);
+    auto edge_pixels = [&](SceneBlur& blur,float strength) {
+        Hr(blur.Draw(device.Get(),context.Get(),edge_input.Get(),{0,0,96,64},strength,&output));
+        return Read(Resource(output).Get());
+    };
+    SceneBlur reference;
+    auto narrow = edge_pixels(reference,1.f);
+    Check(edge_pixels(full,8.f) != narrow);
+    Check(edge_pixels(full,1.f) == narrow);
+    Check(edge_pixels(full,1.f) == narrow);
+    full.Reset();
+    Check(edge_pixels(full,1.f) == narrow);
+    auto minimal = edge_pixels(full,std::numeric_limits<float>::min());
+    Check(minimal[(8*24+2)*4] == 0 && minimal[(8*24+21)*4] == 255);
+    for (float invalid : {0.f, 9.f, std::numeric_limits<float>::quiet_NaN()})
+        Check(full.Draw(device.Get(),context.Get(),edge_input.Get(),{0,0,96,64},invalid,&output) == E_INVALIDARG && !output);
     Check(full.Draw(device.Get(),context.Get(),input.Get(),{0,0,512,256},0,nullptr)==E_POINTER);
     Check(full.Draw(nullptr,context.Get(),input.Get(),{0,0,512,256},1,&output)==E_INVALIDARG);
     UINT quality=0;Hr(device->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM,4,&quality));

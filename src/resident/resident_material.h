@@ -1,6 +1,7 @@
 #pragma once
 #include <d3d11.h>
-#include <d3dcompiler.h>
+#include "scene_blur_vs.h"
+#include "scene_blur_ps.h"
 #include <wrl/client.h>
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,16 @@ inline HRESULT CreateUiTarget(ID3D11Device* device,ID3D11Texture2D* buffer,ID3D1
 
 class SceneBlur {
     template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
+    struct Tap {
+        float distance, weight, padding[2];
+    };
+    struct Constants {
+        float x, y, phase, centerWeight;
+        Tap taps[16];
+    } constants{};
+    static_assert(sizeof(Constants) == 17 * 16, "scene_blur.hlsl constant buffer layout");
+    float cached_strength = 0;
+    int kernel_radius = 0;
     Ptr<ID3D11Texture2D> copy,linear[2],encoded;
     Ptr<ID3D11ShaderResourceView> source,views[2],result;
     Ptr<ID3D11RenderTargetView> targets[3];
@@ -38,39 +49,60 @@ class SceneBlur {
         copy.Reset();source.Reset();result.Reset();encoded.Reset();
         for(unsigned i=0;i<2;i++){linear[i].Reset();views[i].Reset();}for(auto& target:targets)target.Reset();width=height=samples=0;
     }
-    void PrepareShaders(ID3D11Device* device) {
-        if(vs)return;
-        const char shader[]=R"(
-Texture2D image:register(t0);SamplerState filtering:register(s0);
-cbuffer Parameters:register(b0){float2 offset;float phase;float center;float4 taps[16];};
-struct Vertex {float4 position:SV_POSITION;float2 uv:TEXCOORD0;};
-Vertex vertex(uint id:SV_VertexID){Vertex v;v.uv=float2((id<<1)&2,id&2);v.position=float4(v.uv*float2(2,-2)+float2(-1,1),0,1);return v;}
-float3 encode(float3 c){c=max(c,0);return lerp(1.055*pow(c,1.0/2.4)-.055,c*12.92,step(c,.0031308));}
-float4 pixel(Vertex v):SV_TARGET {
-    if(phase<.5){float3 c=image.Sample(filtering,v.uv+offset).rgb+image.Sample(filtering,v.uv-offset).rgb;
-        c+=image.Sample(filtering,v.uv+float2(offset.x,-offset.y)).rgb+image.Sample(filtering,v.uv+float2(-offset.x,offset.y)).rgb;return float4(c*.25,1);}
-    float3 color=image.Sample(filtering,v.uv).rgb*center;
-    [loop]for(int i=0;i<16;i++){if(taps[i].y<=0)break;float2 delta=offset*taps[i].x;
-        color+=(image.Sample(filtering,v.uv+delta).rgb+image.Sample(filtering,v.uv-delta).rgb)*taps[i].y;}
-    return float4(phase>1.5?encode(color):color,1);
-})";
-        Ptr<ID3DBlob> vertex,pixel,error;
-        Check(D3DCompile(shader,sizeof(shader)-1,nullptr,nullptr,nullptr,"vertex","vs_4_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&vertex,&error));
-        Check(D3DCompile(shader,sizeof(shader)-1,nullptr,nullptr,nullptr,"pixel","ps_4_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&pixel,&error));
-        Check(device->CreateVertexShader(vertex->GetBufferPointer(),vertex->GetBufferSize(),nullptr,&vs));
-        Check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
-        D3D11_BUFFER_DESC constant{};constant.ByteWidth=16*17;constant.BindFlags=D3D11_BIND_CONSTANT_BUFFER;Check(device->CreateBuffer(&constant,nullptr,&parameters));
-        D3D11_SAMPLER_DESC sampling{};sampling.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sampling.AddressU=sampling.AddressV=sampling.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sampling.MaxLOD=D3D11_FLOAT32_MAX;
-        sampling.ComparisonFunc=D3D11_COMPARISON_ALWAYS;sampling.MaxAnisotropy=1;Check(device->CreateSamplerState(&sampling,&sampler));
-        D3D11_RASTERIZER_DESC drawing{};drawing.FillMode=D3D11_FILL_SOLID;drawing.CullMode=D3D11_CULL_NONE;drawing.DepthClipEnable=TRUE;drawing.ScissorEnable=TRUE;
-        Check(device->CreateRasterizerState(&drawing,&raster));D3D11_DEPTH_STENCIL_DESC testing{};testing.DepthFunc=D3D11_COMPARISON_ALWAYS;
-        testing.FrontFace.StencilFailOp=testing.FrontFace.StencilDepthFailOp=testing.FrontFace.StencilPassOp=D3D11_STENCIL_OP_KEEP;testing.FrontFace.StencilFunc=D3D11_COMPARISON_ALWAYS;testing.BackFace=testing.FrontFace;
-        Check(device->CreateDepthStencilState(&testing,&depth));
+    void PreparePipeline(ID3D11Device* device) {
+        if (vs) return;
+        Check(device->CreateVertexShader(BlurVertexShader, sizeof(BlurVertexShader), nullptr, &vs));
+        Check(device->CreatePixelShader(BlurPixelShader, sizeof(BlurPixelShader), nullptr, &ps));
+        D3D11_BUFFER_DESC constant{};
+        constant.ByteWidth = sizeof(Constants);
+        constant.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        Check(device->CreateBuffer(&constant, nullptr, &parameters));
+        D3D11_SAMPLER_DESC sampling{};
+        sampling.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampling.AddressU = sampling.AddressV = sampling.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampling.MaxLOD = D3D11_FLOAT32_MAX;
+        sampling.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+        sampling.MaxAnisotropy = 1;
+        Check(device->CreateSamplerState(&sampling, &sampler));
+
+        D3D11_RASTERIZER_DESC drawing{};
+        drawing.FillMode = D3D11_FILL_SOLID;
+        drawing.CullMode = D3D11_CULL_NONE;
+        drawing.DepthClipEnable = TRUE;
+        drawing.ScissorEnable = TRUE;
+        Check(device->CreateRasterizerState(&drawing, &raster));
+
+        D3D11_DEPTH_STENCIL_DESC testing{};
+        testing.DepthFunc = D3D11_COMPARISON_ALWAYS;
+        testing.FrontFace = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_ALWAYS};
+        testing.BackFace = testing.FrontFace;
+        Check(device->CreateDepthStencilState(&testing, &depth));
+    }
+    void UpdateKernel(float strength) {
+        if (strength == cached_strength) return;
+        cached_strength = strength;
+        const float sigma = 1.7f * strength;
+        kernel_radius = std::min(32, static_cast<int>(ceilf(3 * sigma)));
+        constants = {};
+        float total = 1;
+        const float denominator = 2 * sigma * sigma;
+        for (int i = 1; denominator > 0 && i <= kernel_radius; i += 2) {
+            const float first = expf(-float(i * i) / denominator);
+            const float second = i < kernel_radius ? expf(-float((i + 1) * (i + 1)) / denominator) : 0;
+            const float weight = first + second;
+            if (weight == 0) break;
+            Tap& tap = constants.taps[i / 2];
+            tap.distance = (i * first + (i + 1) * second) / weight;
+            tap.weight = weight;
+            total += 2 * weight;
+        }
+        constants.centerWeight = 1 / total;
+        for (Tap& tap : constants.taps) tap.weight /= total;
     }
     void Prepare(ID3D11Device* device,const D3D11_TEXTURE2D_DESC& input) {
         if(copy&&width==input.Width&&height==input.Height&&format==input.Format&&samples==input.SampleDesc.Count)return;
         ResetTextures();DXGI_FORMAT unorm=UiUnormFormat(input.Format);if(unorm==DXGI_FORMAT_UNKNOWN)throw DXGI_ERROR_UNSUPPORTED;
-        PrepareShaders(device);
+        PreparePipeline(device);
         D3D11_TEXTURE2D_DESC texture{};texture.Width=input.Width;texture.Height=input.Height;texture.MipLevels=texture.ArraySize=1;texture.SampleDesc.Count=1;
         texture.Format=unorm==DXGI_FORMAT_R8G8B8A8_UNORM?DXGI_FORMAT_R8G8B8A8_TYPELESS:DXGI_FORMAT_B8G8R8A8_TYPELESS;
         texture.BindFlags=D3D11_BIND_SHADER_RESOURCE;
@@ -101,7 +133,8 @@ public:
             if(!description.Width||!description.Height||!std::isfinite(strength)||strength<=0||strength>8||
                area.left<0||area.top<0||area.right>(LONG)description.Width||area.bottom>(LONG)description.Height||area.left>=area.right||area.top>=area.bottom)return E_INVALIDARG;
             Prepare(device,description);
-            float sigma=1.7f*strength;int radius=std::min(32,(int)ceilf(3*sigma));LONG margin=radius*4+12;
+            UpdateKernel(strength);
+            const LONG margin = kernel_radius * 4 + 12;
             D3D11_RECT region{std::max(0L,area.left-margin),std::max(0L,area.top-margin),std::min((LONG)width,area.right+margin),std::min((LONG)height,area.bottom+margin)};
             context->OMSetRenderTargets(0,nullptr,nullptr);ID3D11ShaderResourceView* empty=nullptr;context->PSSetShaderResources(0,1,&empty);
             if(samples>1)context->ResolveSubresource(copy.Get(),0,input,0,description.Format==DXGI_FORMAT_R8G8B8A8_TYPELESS||description.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS?UiUnormFormat(description.Format):description.Format);
@@ -115,17 +148,14 @@ public:
             context->HSSetShader(nullptr,nullptr,0);context->DSSetShader(nullptr,nullptr,0);context->CSSetShader(nullptr,nullptr,0);
             auto constant=parameters.Get();auto filtering=sampler.Get();context->PSSetConstantBuffers(0,1,&constant);context->PSSetSamplers(0,1,&filtering);
             ID3D11ShaderResourceView* images[]={source.Get(),views[0].Get(),views[1].Get()};
-            struct Constants {float x=0,y=0,phase=0,center=0,taps[16][4]{};} values;
-            static_assert(sizeof(Constants)==16*17,"blur constant packing");float total=1;
-            for(int i=1,n=0;i<=radius;i+=2,n++) {
-                float first=expf(-float(i*i)/(2*sigma*sigma)),second=i+1<=radius?expf(-float((i+1)*(i+1))/(2*sigma*sigma)):0;
-                values.taps[n][0]=(i*first+(i+1)*second)/(first+second);values.taps[n][1]=first+second;total+=2*(first+second);
-            }
-            values.center=1/total;for(auto& tap:values.taps)tap[1]/=total;
+            // Downsample, blur horizontally, then blur vertically and encode to sRGB.
+            const float offsets[3][2] = {{1.f/width, 1.f/height}, {1.f/reduced.Width, 0}, {0, 1.f/reduced.Height}};
             for(unsigned i=0;i<3;i++) {
                 auto target=targets[i].Get();context->OMSetRenderTargets(1,&target,nullptr);context->PSSetShaderResources(0,1,&images[i]);
-                values.x=i==0?1.f/width:i==1?1.f/reduced.Width:0;values.y=i==0?1.f/height:i==2?1.f/reduced.Height:0;values.phase=(float)i;
-                context->UpdateSubresource(constant,0,nullptr,&values,0,0);context->Draw(3,0);context->PSSetShaderResources(0,1,&empty);
+                constants.x = offsets[i][0];
+                constants.y = offsets[i][1];
+                constants.phase = static_cast<float>(i);
+                context->UpdateSubresource(constant,0,nullptr,&constants,0,0);context->Draw(3,0);context->PSSetShaderResources(0,1,&empty);
             }
             Check(device->GetDeviceRemovedReason());*output=result.Get();return S_OK;
         }catch(HRESULT error){failure=error;return error;}catch(...){failure=E_OUTOFMEMORY;return failure;}
