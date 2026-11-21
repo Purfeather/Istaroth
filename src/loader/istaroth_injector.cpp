@@ -188,7 +188,7 @@ static DWORD FindGamePid() {
 }
 static HANDLE WaitForGame(std::wstring& game) {
     operation="waiting_game";Trace("waiting");
-    Progress(L"请手动启动原神",InjectorStage::WaitingGame);
+    Progress(handover_count ? L"正在等待《原神》启动" : L"请启动《原神》", InjectorStage::WaitingGame);
     for(;;) {
         CheckCancelled();DWORD pid=FindGamePid();
         if(pid) {
@@ -222,10 +222,10 @@ static void Existing(const std::wstring& expected,bool restart) {
     try {
         if(_wcsicmp(ProcessPath(process).c_str(),expected.c_str()))throw (DWORD)ERROR_INVALID_NAME;
         if(!restart) {
-            if(quiet||MessageBoxW(progress,L"游戏已运行。此版本需要重启游戏后正常加载组件。\n\n现在重启并加载？",L"伊斯塔露加载器",MB_YESNOCANCEL|MB_DEFBUTTON2|MB_ICONINFORMATION)!=IDYES)
+            if(quiet||MessageBoxW(progress,L"《原神》正在运行。现在关闭游戏并重新启动，以加载伊斯塔露吗？\n\n选择“否”或“取消”可继续当前游戏。",L"伊斯塔露加载器",MB_YESNOCANCEL|MB_DEFBUTTON2|MB_ICONINFORMATION)!=IDYES)
                 throw (DWORD)ERROR_CANCELLED;
         }
-        Progress(L"正在重新启动游戏…",InjectorStage::Terminating);
+        Progress(L"正在关闭当前游戏",InjectorStage::Terminating);
         CheckCancelled();
         if(!TerminateProcess(process,0))throw GetLastError();
         uint64_t end=GetTickCount64()+5000;DWORD stopped=WAIT_TIMEOUT;
@@ -319,7 +319,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         if(error||restart)return ERROR_INVALID_PARAMETER;
         std::wstring report;error=diagnostics::ExportReport(directory,TargetSha256,report);
         if(!quiet) {
-            std::wstring text=error?L"导出诊断报告失败，错误码："+std::to_wstring(error):L"诊断报告已保存：\n"+report+L"\n\n请补充报错时间和现象后发送此文件。";
+            std::wstring text=error?L"无法保存诊断报告。错误代码 "+std::to_wstring(error):L"诊断报告已保存到以下位置：\n"+report+L"\n\n反馈问题时，请附上此报告，并说明出错时间和当时看到的现象。";
             MessageBoxW(nullptr,text.c_str(),L"伊斯塔露 · 诊断报告",MB_OK|(error?MB_ICONERROR:MB_ICONINFORMATION));
         }
         return (int)error;
@@ -347,19 +347,19 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         for(;;) {try {
         if(game.empty())process=WaitForGame(game);
         operation="validating_game";
-        Progress(L"正在校验游戏版本", InjectorStage::CheckingGame);
+        Progress(L"正在检查《原神》的版本", InjectorStage::CheckingGame);
         const wchar_t* base=wcsrchr(game.c_str(),L'\\');base=base?base+1:game.c_str();
         if(_wcsicmp(base,TargetName)||verifier.Sha256(game)!=TargetSha256)throw (DWORD)ERROR_REVISION_MISMATCH;
         if(!process) {
             operation="starting_game";
-            Existing(game,restart);Progress(L"正在启动游戏并加载驻留组件…",InjectorStage::Starting);
+            Existing(game,restart);Progress(L"正在启动《原神》",InjectorStage::Starting);
             STARTUPINFOW startup={sizeof(startup)};PROCESS_INFORMATION info={};std::wstring cwd=game.substr(0,game.find_last_of(L'\\'));
             CheckCancelled();
             if(!CreateProcessW(game.c_str(),nullptr,nullptr,nullptr,FALSE,0,nullptr,cwd.c_str(),&startup,&info))throw GetLastError();
             process=info.hProcess;CloseHandle(info.hThread);game_pid=info.dwProcessId;game_birth=Birth(process);
-        } else Progress(L"已检测到原神，正在加载组件…",InjectorStage::Starting);
+        } else Progress(L"已找到《原神》，正在加载伊斯塔露",InjectorStage::Starting);
         RequireAlive(process);if(_wcsicmp(ProcessPath(process).c_str(),game.c_str()))throw (DWORD)ERROR_INVALID_NAME;
-        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process);Progress(L"正在等待游戏内界面就绪",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
+        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process);Progress(L"正在等待游戏内菜单",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
         }catch(DWORD value) {
             if(value==ERROR_ELEVATION_REQUIRED&&first_run&&!load_started&&!handover_count&&process&&
                WaitForSingleObject(process,0)==WAIT_OBJECT_0&&GetExitCodeProcess(process,&child_exit)&&child_exit==ElevationExit) {
@@ -377,21 +377,32 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     if(injection_guard)CloseHandle(injection_guard);
     if(process){GetExitCodeProcess(process,&child_exit);CloseHandle(process);}Receipt(error);
     if(error&&!quiet&&error!=ERROR_CANCELLED) {
-        const wchar_t* hint=error==ERROR_REVISION_MISMATCH?L"所选游戏版本与本试用包不匹配，请使用对应版本的 Istaroth。":
-            error==ERROR_ELEVATION_REQUIRED?L"游戏启动进程要求提升权限。请完成游戏正常的权限确认后重试。":
-            error==ERROR_PROCESS_ABORTED?L"目标游戏进程已退出，尚未完成组件初始化。请查看加载器日志中的退出状态。":
-            error==ERROR_ALREADY_EXISTS?L"游戏已有 Istaroth 组件或其他加载器正在初始化。请勿重复加载；更换版本需先正常退出游戏。":
-            error==ERROR_ACCESS_DENIED?L"无法访问游戏进程或加载组件。请关闭游戏，先打开管理员加载器，再手动启动游戏。":
-            error==ERROR_WRITE_FAULT||error==ERROR_NO_UNICODE_TRANSLATION?L"无法正确保存游戏路径，请检查 Istaroth.ini 的写入权限与编码。":
-            L"请查看 Istaroth-injector.log 与 Istaroth-injector-result.json；游戏内组件日志为 Istaroth-runtime.log。";
+        const wchar_t* hint = L"请打开加载器所在文件夹，查看 Istaroth-injector.log 中的错误记录。";
+        if (runtime_ready && !strcmp(operation, "saving_path"))
+            hint = L"游戏内功能已加载，但游戏路径未能保存到 Istaroth.ini。请检查加载器所在文件夹是否可写。";
+        else if (!strcmp(operation, "validating_payloads") && (error == ERROR_FILE_NOT_FOUND || error == ERROR_CRC))
+            hint = L"伊斯塔露的文件缺失或未通过校验。请将同一版本的压缩包完整解压到一个文件夹，再打开加载器。";
+        else if (error == ERROR_REVISION_MISMATCH)
+            hint = !strcmp(operation, "validating_game")
+                ? L"当前版本的伊斯塔露不支持这个游戏版本。请使用与游戏版本匹配的伊斯塔露。"
+                : L"加载器未能确认游戏内组件的版本或运行状态。请退出游戏，确认加载器和组件来自同一版本后重试。";
+        else if (error == ERROR_ELEVATION_REQUIRED)
+            hint = L"游戏启动时需要 Windows 权限确认。请完成系统提示的操作后重试。";
+        else if (error == ERROR_PROCESS_ABORTED)
+            hint = L"《原神》在加载完成前已退出。请查看游戏是否能正常启动。";
+        else if (error == ERROR_ALREADY_EXISTS)
+            hint = L"伊斯塔露已在运行或正在加载。请回到游戏，或等待先打开的加载器完成。";
+        else if (error == ERROR_ACCESS_DENIED)
+            hint = L"Windows 拒绝了本次操作。请查看加载日志，确认哪一步未能完成。";
         visual.stage = InjectorStage::Failed;
-        visual.main_status = L"加载未完成";
+        visual.main_status = runtime_ready ? L"未能保存游戏路径" : L"本次加载未完成";
         visual.detail_hint = hint;
         visual.error_code = error;
         RefreshProgress();
         Pump();
-        wchar_t text[600];swprintf_s(text,L"加载未完成（错误 %lu）。\n\n%s\n若游戏内菜单已出现，可按 F10 停用功能。更换载荷后需正常重启游戏。",error,hint);
-        if(!cancel_requested)MessageBoxW(progress,text,L"Istaroth",MB_OK|MB_ICONERROR);
+        wchar_t text[600];
+        swprintf_s(text, L"%s（错误代码 %lu）\n\n%s", visual.main_status.c_str(), error, hint);
+        if(!cancel_requested)MessageBoxW(progress,text,L"伊斯塔露加载器",MB_OK|MB_ICONERROR);
     }
     if (progress) {
         DestroyWindow(progress);

@@ -30,12 +30,18 @@ int ProgressStep(InjectorStage stage) {
 const wchar_t* Hint(const InjectorUiState& state) {
     if (!state.detail_hint.empty()) return state.detail_hint.c_str();
     if (state.stage == InjectorStage::WaitingGame)
-        return L"检测到游戏后会自动继续，初始化成功后记住路径。关闭窗口可取消等待。";
+        return L"游戏启动后，伊斯塔露会自动加载。关闭此窗口可取消等待。";
     if (state.stage == InjectorStage::Waiting)
-        return L"游戏内功能默认暂停。就绪后此窗口自动关闭，按 Insert 打开菜单，按 F10 停用。";
+        return L"菜单准备好后，此窗口会自动关闭。功能默认暂停，进入游戏后按 Insert 打开菜单，再点“启用”。";
+    if (state.stage == InjectorStage::Terminating)
+        return L"当前游戏关闭后，加载器会重新启动《原神》。";
     if (state.load_started)
-        return L"关闭窗口后游戏和组件继续运行。游戏内按 Insert 打开菜单，按 F10 停用。";
-    return L"就绪后加载器会自动退出。关闭窗口可取消后续步骤，已启动的游戏会继续运行。";
+        return L"关闭此窗口只会停止等待。游戏会继续运行，已加载的功能可在游戏内按 F10 停用。";
+    if (state.stage == InjectorStage::CheckingGame)
+        return L"加载器正在确认这个版本的《原神》是否受支持。";
+    if (state.stage == InjectorStage::Starting)
+        return L"请保持游戏和此窗口打开，加载器会自动完成后续步骤。";
+    return L"加载器会先确认所需文件完整，再检查游戏。";
 }
 
 void Fill(HDC dc, RECT rect, COLORREF color) {
@@ -77,7 +83,9 @@ void Draw(HDC dc, int width, int height, const InjectorUiState& state) {
     Text(dc, {left, title.bottom + px(6), right, bottom_band - px(4)}, Hint(state), secondary, DT_WORDBREAK);
 
     if (step >= 0) {
-        constexpr const wchar_t* labels[] = {L"检查组件", L"准备游戏", L"确认就绪"};
+        const wchar_t* labels[] = {L"检查文件", L"确认游戏", L"加载游戏内功能"};
+        if (state.stage == InjectorStage::WaitingGame) labels[1] = L"等待游戏启动";
+        if (state.stage == InjectorStage::CheckingGame) labels[1] = L"检查游戏版本";
         int gap = px(10), available = right - left + gap;
         for (int i = 0; i < 3; ++i) {
             int x = left + available * i / 3, end = left + available * (i + 1) / 3 - gap;

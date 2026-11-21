@@ -11,7 +11,7 @@ constexpr int kInjectorDesignHeight = 174;
 
 struct InjectorUiState {
     InjectorStage stage = InjectorStage::Checking;
-    std::wstring main_status = L"正在校验组件文件";
+    std::wstring main_status = L"正在检查伊斯塔露的文件";
     std::wstring detail_hint;
     DWORD error_code = 0;
     bool load_started = false;
