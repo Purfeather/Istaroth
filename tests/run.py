@@ -106,6 +106,7 @@ try:
     run('cursor-test.exe')
     run('diagnostics-test.exe')
     run('renderer-test.exe')
+    run('ui-review.exe', ['--test'])
     run('material-test.exe', seconds=50)
     run('loader-test.exe')
     for mode in ['handover','dead-listed','loaded','crash','repeat','cancel','module-absent','pending-file']:

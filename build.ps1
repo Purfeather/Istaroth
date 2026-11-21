@@ -126,6 +126,8 @@ try {
     CompileCpp 'tests/renderer-test.exe' (@('tests/renderer_test.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
     CompileCpp 'tests/material-test.exe' (@('tests/material_test.cpp') + $slimFlags + $uiObjects + $uiLibraries)
     CompileCpp 'tests/ui-snapshot.exe' (@('tests/ui_snapshot.cpp') + $slimFlags + $uiObjects + $uiLibraries)
+    CompileCpp 'tests/ui-review.exe' (@('tests/ui_review.cpp') + $slimFlags + $uiObjects + @("$out/imgui_impl_win32.obj") + $uiLibraries)
+    CompileCpp 'tests/blur-bench.exe' @('tests/blur_bench.cpp','d3d11.lib')
     & (Join-Path $root 'tools/build_report_tool.ps1') -VcTools $VcTools -SdkRoot $SdkRoot -OutputDirectory "$out/report-tool" -SkipTests:$SkipTests
     Run 'python' @('-B','tools/build_manifest.py',$root,$out,$version,($(if ($Slim) {'slim'} else {'standard'})))
     if (-not $SkipTests) {
