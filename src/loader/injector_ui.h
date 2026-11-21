@@ -31,7 +31,6 @@ public:
 private:
     HDC surface = nullptr;
     HBITMAP bitmap = nullptr;
-    HICON portrait = nullptr;
     SIZE size{};
     InjectorUiState previous;
 };
