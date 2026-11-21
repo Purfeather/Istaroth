@@ -1,6 +1,6 @@
 # Istaroth · 伊斯塔露
 
-Windows x64 原神剧情辅助工具。当前正式版为 [**v0.4.0**](https://github.com/Purfeather/Istaroth/releases/tag/v0.4.0)。
+Windows x64 原神剧情辅助工具。本分支源码版本为 **v0.4.1**。[本版更新记录](CHANGELOG.md#v041--2026-11-21) · [v0.4.0 正式版](https://github.com/Purfeather/Istaroth/releases/tag/v0.4.0)
 
 `main` 保存已验收的源码更新，可能领先于已发布安装包；[develop](https://github.com/Purfeather/Istaroth/tree/develop) 用于保存开发中的修改，可能尚未完成全部测试。已发布安装包请前往 [Release](https://github.com/Purfeather/Istaroth/releases)；开发流程见 [开发分支说明](docs/DEVELOPMENT.md)。
 
