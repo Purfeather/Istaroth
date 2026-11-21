@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$Baseline,
     [Parameter(Mandatory)][string]$Candidate,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [string]$BaselineSource
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -21,6 +22,25 @@ function PixelHash([string]$Path) {
     } finally { $image.Dispose() }
 }
 $builds = [ordered]@{baseline=(Resolve-Path $Baseline).Path; candidate=(Resolve-Path $Candidate).Path}
+$benchTools = @{baseline="$Baseline/tests"; candidate="$Candidate/tests"}
+if ($BaselineSource) {
+    # The accepted baseline predates the test drivers. Link the same drivers
+    # against its optimized objects to measure the old implementation.
+    $dir = $builds.baseline
+    $src = (Resolve-Path $BaselineSource).Path
+    $out = [IO.Directory]::CreateDirectory((Join-Path $OutputDirectory 'baseline-tools')).FullName
+    $flags = @('/nologo','/O2','/MT','/std:c++17','/EHsc','/utf-8','/DUNICODE','/D_UNICODE','/DISTAROTH_EMBED_ICON',
+        '/FIistaroth_imgui_config.h',"/I$src/src/shared","/I$src/src/resident","/I$src/third_party/imgui","/I$dir")
+    $objects = 'resident_ui','imgui','imgui_draw','imgui_widgets','imgui_tables','imgui_impl_dx11','imgui_impl_win32' |
+        ForEach-Object { "$dir/$_.obj" }
+    & cl.exe @flags "$PSScriptRoot/ui_review.cpp" "/Fo:$out/review.obj" "/Fe:$out/ui-review.exe" @objects d3d11.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib imm32.lib dwmapi.lib windowscodecs.lib ole32.lib
+    if ($LASTEXITCODE) { throw 'Baseline UI driver build failed' }
+    & cl.exe @flags "$PSScriptRoot/blur_bench.cpp" "/Fo:$out/bench.obj" "/Fe:$out/blur-bench.exe" d3d11.lib
+    if ($LASTEXITCODE) { throw 'Baseline blur driver build failed' }
+    & "$out/ui-review.exe" --test
+    if ($LASTEXITCODE) { throw 'Baseline menu interaction test failed' }
+    $benchTools.baseline = $out
+}
 $hashes = @{}
 $timings = @{}
 foreach ($label in $builds.Keys) {
@@ -43,10 +63,10 @@ foreach ($name in $hashes.baseline.Keys) {
     if ($hashes.baseline[$name] -ne $hashes.candidate[$name]) { throw "Pixel mismatch: $name" }
 }
 function MeasureGroup([string]$Label) {
-    $dir=$builds[$Label]
-    $lines = & "$dir/tests/ui-review.exe" --bench
+    $dir=$benchTools[$Label]
+    $lines = & "$dir/ui-review.exe" --bench
     if ($LASTEXITCODE) { throw 'UI benchmark failed' }
-    $lines += & "$dir/tests/blur-bench.exe"
+    $lines += & "$dir/blur-bench.exe"
     if ($LASTEXITCODE) { throw 'Material benchmark failed' }
     foreach ($line in $lines) {
         if ($line -notmatch '^(\w+_ms)=([\d.]+)') { throw "Unexpected benchmark output $line" }
