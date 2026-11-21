@@ -9,6 +9,7 @@
 #include <vector>
 #include <cstdio>
 #include <algorithm>
+#include <memory>
 #include "resident_protocol.h"
 #include "resident_payloads.h"
 #include "injector_ui.h"
@@ -16,13 +17,13 @@
 #include "diagnostic_report.h"
 using namespace istaroth;
 
-static std::wstring directory,message=L"正在校验游戏版本与组件…";
+static std::wstring directory;
 static InjectorUiState visual;
+static InjectorUiRenderer renderer;
 static HWND progress=nullptr;
 static bool quiet=false;
 static bool runtime_ready=false;
 static bool cancel_requested=false,load_started=false,path_discovered=false;
-static constexpr DWORD WindowStyle=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;
 static DWORD game_pid=0;
 static uint64_t game_birth=0;
 static DWORD child_exit=STILL_ACTIVE;
@@ -45,41 +46,95 @@ static void RequireAlive(HANDLE process) {
 }
 static void Pump() {MSG m;while(PeekMessageW(&m,nullptr,0,0,PM_REMOVE)){TranslateMessage(&m);DispatchMessageW(&m);}}
 static void CheckCancelled(){Pump();if(cancel_requested)throw (DWORD)ERROR_CANCELLED;}
-static void Progress(const wchar_t* text,InjectorStage stage=InjectorStage::Checking) {CheckCancelled();message=text;visual.stage=stage;if(progress){InvalidateRect(progress,nullptr,TRUE);UpdateWindow(progress);}CheckCancelled();}
-static LRESULT CALLBACK Window(HWND window,UINT msg,WPARAM w,LPARAM l) {
-    if(msg==WM_CLOSE){cancel_requested=true;ShowWindow(window,SW_HIDE);return 0;}
-    if(msg==WM_DPICHANGED){auto rect=(RECT*)l;SetWindowPos(window,nullptr,rect->left,rect->top,rect->right-rect->left,rect->bottom-rect->top,SWP_NOZORDER|SWP_NOACTIVATE);return 0;}
-    if(msg==WM_PAINT) {
-        PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);RECT box;GetClientRect(window,&box);
-        visual.main_status=message;
-        visual.detail_hint=visual.stage==InjectorStage::WaitingGame?L"请按平时的方式启动原神，检测后自动校验并加载。关闭窗口可取消等待。":
-            load_started?L"确认就绪后加载器自动退出。关闭窗口不会卸载组件或结束游戏；Insert 打开菜单，F10 停用功能。":L"确认就绪后加载器自动退出。关闭窗口会取消后续步骤，已启动的游戏继续运行。";
-        RenderInjectorUi(dc,box,visual);EndPaint(window,&paint);return 0;
-    }
-    return DefWindowProcW(window,msg,w,l);
+static void RefreshProgress() {
+    if (!progress) return;
+    InvalidateRect(progress, nullptr, FALSE);
+    UpdateWindow(progress);
 }
-static std::string Hash(const std::wstring& path) {
+
+static void Progress(const wchar_t* text, InjectorStage stage) {
     CheckCancelled();
-    HANDLE file=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,nullptr);
-    if(file==INVALID_HANDLE_VALUE)throw GetLastError();
-    BCRYPT_ALG_HANDLE algorithm=nullptr;BCRYPT_HASH_HANDLE hash=nullptr;std::string result;
-    std::vector<BYTE> object,buffer(1024*1024);BYTE digest[32];DWORD size=0,done=0;
-    bool ok=BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)>=0;
-    if(ok)ok=BCryptGetProperty(algorithm,BCRYPT_OBJECT_LENGTH,(BYTE*)&size,sizeof(size),&done,0)>=0;
-    if(ok){object.resize(size);ok=BCryptCreateHash(algorithm,&hash,object.data(),size,nullptr,0,0)>=0;}
-    uint64_t last_pump=GetTickCount64();
-    while(ok) {
-        DWORD count=0;if(!ReadFile(file,buffer.data(),(DWORD)buffer.size(),&count,nullptr)){ok=false;break;}if(!count)break;
-        ok=BCryptHashData(hash,buffer.data(),count,0)>=0;
-        if(GetTickCount64()-last_pump>100){Pump();last_pump=GetTickCount64();}
-        if(cancel_requested)break;
-    }
-    if(ok&&!cancel_requested)ok=BCryptFinishHash(hash,digest,sizeof(digest),0)>=0;
-    if(hash)BCryptDestroyHash(hash);if(algorithm)BCryptCloseAlgorithmProvider(algorithm,0);CloseHandle(file);
+    visual.stage = stage;
+    visual.main_status = text;
+    RefreshProgress();
     CheckCancelled();
-    if(!ok)throw (DWORD)ERROR_CRC;
-    char hex[65];for(unsigned i=0;i<32;i++)sprintf_s(hex+i*2,3,"%02x",digest[i]);result=hex;return result;
 }
+
+static LRESULT CALLBACK Window(HWND window, UINT msg, WPARAM w, LPARAM l) {
+    switch (msg) {
+    case WM_CLOSE:
+        cancel_requested = true;
+        ShowWindow(window, SW_HIDE);
+        return 0;
+    case WM_DPICHANGED: {
+        auto rect = reinterpret_cast<const RECT*>(l);
+        SetWindowPos(window, nullptr, rect->left, rect->top, rect->right - rect->left,
+                     rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    }
+    case WM_DISPLAYCHANGE:
+        renderer.Reset();
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};
+        HDC dc = BeginPaint(window, &paint);
+        RECT client{};
+        GetClientRect(window, &client);
+        visual.load_started = load_started;
+        renderer.Paint(dc, client, visual);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_DESTROY:
+        renderer.Reset();
+        return 0;
+    }
+    return DefWindowProcW(window, msg, w, l);
+}
+class FileHasher {
+public:
+    std::string Sha256(const std::wstring& path) {
+        CheckCancelled();
+        HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                  OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        if (file == INVALID_HANDLE_VALUE) throw GetLastError();
+
+        BCRYPT_HASH_HANDLE hash = nullptr;
+        BYTE digest[32];
+        bool ok = BCryptCreateHash(BCRYPT_SHA256_ALG_HANDLE, &hash, nullptr, 0, nullptr, 0, 0) >= 0;
+        auto last_pump = GetTickCount64();
+        while (ok && !cancel_requested) {
+            DWORD count = 0;
+            ok = ReadFile(file, buffer.get(), chunk_size, &count, nullptr) != FALSE;
+            if (!ok || !count) break;
+            ok = BCryptHashData(hash, buffer.get(), count, 0) >= 0;
+            if (GetTickCount64() - last_pump > 100) {
+                Pump();
+                last_pump = GetTickCount64();
+            }
+        }
+        if (ok && !cancel_requested) ok = BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0;
+        if (hash) BCryptDestroyHash(hash);
+        CloseHandle(file);
+        CheckCancelled();
+        if (!ok) throw (DWORD)ERROR_CRC;
+
+        constexpr char digits[] = "0123456789abcdef";
+        std::string result(sizeof(digest) * 2, '0');
+        for (size_t i = 0; i < sizeof(digest); ++i) {
+            result[2 * i] = digits[digest[i] >> 4];
+            result[2 * i + 1] = digits[digest[i] & 15];
+        }
+        return result;
+    }
+
+private:
+    static constexpr DWORD chunk_size = 1024 * 1024;
+    std::unique_ptr<BYTE[]> buffer{new BYTE[chunk_size]};
+};
+
 static bool GamePath(const std::wstring& input,std::wstring& full) {
     if(input.empty())return false;
     std::wstring path=input;std::replace(path.begin(),path.end(),L'/',L'\\');
@@ -133,7 +188,7 @@ static DWORD FindGamePid() {
 }
 static HANDLE WaitForGame(std::wstring& game) {
     operation="waiting_game";Trace("waiting");
-    Progress(L"首次使用，请手动启动原神。\n正在等待游戏启动，初始化成功后会记住游戏路径。",InjectorStage::WaitingGame);
+    Progress(L"请手动启动原神",InjectorStage::WaitingGame);
     for(;;) {
         CheckCancelled();DWORD pid=FindGamePid();
         if(pid) {
@@ -269,15 +324,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         }
         return (int)error;
     }
-    HBRUSH background=CreateSolidBrush(RGB(14,20,32));
-    if(!quiet) {
-        WNDCLASSW wc={};wc.hInstance=instance;wc.lpfnWndProc=Window;wc.lpszClassName=L"Istaroth.Injector";wc.hbrBackground=background;
-        wc.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(101));
-        UINT dpi=GetDpiForSystem();RECT rect={0,0,MulDiv(640,dpi,96),MulDiv(220,dpi,96)};
-        AdjustWindowRectExForDpi(&rect,WindowStyle,FALSE,0,dpi);
-        RegisterClassW(&wc);progress=CreateWindowW(wc.lpszClassName,L"伊斯塔露加载器",WindowStyle,80,80,rect.right-rect.left,rect.bottom-rect.top,nullptr,nullptr,instance,nullptr);
-        if(!progress){error=GetLastError();Receipt(error);DeleteObject(background);return (int)error;}
-        ShowWindow(progress,SW_SHOW);UpdateWindow(progress);
+    if (!quiet) {
+        visual = {};
+        progress = CreateInjectorWindow(instance, Window);
+        if (!progress) { error = GetLastError(); Receipt(error); return (int)error; }
+        ShowWindow(progress, SW_SHOW);
+        UpdateWindow(progress);
     }
     HANDLE process=nullptr,injection_guard=nullptr;
     try {
@@ -289,13 +341,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         game=ConfiguredGamePath();if(game.empty()&&quiet)throw (DWORD)ERROR_PATH_NOT_FOUND;
 #endif
         operation="validating_payloads";Trace("started");
-        for(auto payload:Payloads)if(Hash(directory+payload.name)!=payload.sha256)throw (DWORD)ERROR_CRC;
+        FileHasher verifier;
+        for(auto payload:Payloads)if(verifier.Sha256(directory+payload.name)!=payload.sha256)throw (DWORD)ERROR_CRC;
         const bool first_run=game.empty();
         for(;;) {try {
         if(game.empty())process=WaitForGame(game);
         operation="validating_game";
+        Progress(L"正在校验游戏版本", InjectorStage::CheckingGame);
         const wchar_t* base=wcsrchr(game.c_str(),L'\\');base=base?base+1:game.c_str();
-        if(_wcsicmp(base,TargetName)||Hash(game)!=TargetSha256)throw (DWORD)ERROR_REVISION_MISMATCH;
+        if(_wcsicmp(base,TargetName)||verifier.Sha256(game)!=TargetSha256)throw (DWORD)ERROR_REVISION_MISMATCH;
         if(!process) {
             operation="starting_game";
             Existing(game,restart);Progress(L"正在启动游戏并加载驻留组件…",InjectorStage::Starting);
@@ -305,7 +359,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
             process=info.hProcess;CloseHandle(info.hThread);game_pid=info.dwProcessId;game_birth=Birth(process);
         } else Progress(L"已检测到原神，正在加载组件…",InjectorStage::Starting);
         RequireAlive(process);if(_wcsicmp(ProcessPath(process).c_str(),game.c_str()))throw (DWORD)ERROR_INVALID_NAME;
-        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process);Progress(L"等待游戏内界面与控制器就绪…\n游戏中保持默认暂停，确认后加载器将自动退出。",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
+        RequireAlive(process);operation="claiming_process";injection_guard=ClaimGame();Load(process);Progress(L"正在等待游戏内界面就绪",InjectorStage::Waiting);AwaitReady(process);runtime_ready=true;operation="saving_path";SaveGamePath(game);operation="ready";break;
         }catch(DWORD value) {
             if(value==ERROR_ELEVATION_REQUIRED&&first_run&&!load_started&&!handover_count&&process&&
                WaitForSingleObject(process,0)==WAIT_OBJECT_0&&GetExitCodeProcess(process,&child_exit)&&child_exit==ElevationExit) {
@@ -323,8 +377,6 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     if(injection_guard)CloseHandle(injection_guard);
     if(process){GetExitCodeProcess(process,&child_exit);CloseHandle(process);}Receipt(error);
     if(error&&!quiet&&error!=ERROR_CANCELLED) {
-        message=L"加载未完成，请查看错误说明。";visual.stage=InjectorStage::Failed;
-        if(progress){InvalidateRect(progress,nullptr,TRUE);UpdateWindow(progress);}Pump();
         const wchar_t* hint=error==ERROR_REVISION_MISMATCH?L"所选游戏版本与本试用包不匹配，请使用对应版本的 Istaroth。":
             error==ERROR_ELEVATION_REQUIRED?L"游戏启动进程要求提升权限。请完成游戏正常的权限确认后重试。":
             error==ERROR_PROCESS_ABORTED?L"目标游戏进程已退出，尚未完成组件初始化。请查看加载器日志中的退出状态。":
@@ -332,8 +384,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
             error==ERROR_ACCESS_DENIED?L"无法访问游戏进程或加载组件。请关闭游戏，先打开管理员加载器，再手动启动游戏。":
             error==ERROR_WRITE_FAULT||error==ERROR_NO_UNICODE_TRANSLATION?L"无法正确保存游戏路径，请检查 Istaroth.ini 的写入权限与编码。":
             L"请查看 Istaroth-injector.log 与 Istaroth-injector-result.json；游戏内组件日志为 Istaroth-runtime.log。";
+        visual.stage = InjectorStage::Failed;
+        visual.main_status = L"加载未完成";
+        visual.detail_hint = hint;
+        visual.error_code = error;
+        RefreshProgress();
+        Pump();
         wchar_t text[600];swprintf_s(text,L"加载未完成（错误 %lu）。\n\n%s\n若游戏内菜单已出现，可按 F10 停用功能。更换载荷后需正常重启游戏。",error,hint);
         if(!cancel_requested)MessageBoxW(progress,text,L"Istaroth",MB_OK|MB_ICONERROR);
     }
-    if(progress)DestroyWindow(progress);DeleteObject(background);return (int)error;
+    if (progress) {
+        DestroyWindow(progress);
+        progress = nullptr;
+    }
+    return (int)error;
 }

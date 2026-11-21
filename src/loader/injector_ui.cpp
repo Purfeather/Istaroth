@@ -1,271 +1,173 @@
 #include "injector_ui.h"
+#include <algorithm>
 #include <cmath>
-#include <vector>
 
 namespace istaroth {
+namespace {
 
-// -----------------------------------------------------------------------------
-// Scheme C: Astral Azure & Deep Frosted Obsidian (Strict GDI Palette)
-// -----------------------------------------------------------------------------
-static constexpr COLORREF kClrBgDark       = RGB(10, 14, 22);   // #0A0E16 深渊曜黑底色
-static constexpr COLORREF kClrCardBg       = RGB(18, 25, 38);   // #121926 内容卡片底色
-static constexpr COLORREF kClrBorderSubtle = RGB(36, 48, 68);   // #243044 极细分割与边框
-static constexpr COLORREF kClrBorderActive = RGB(80, 170, 255); // #50AAFF 穹极星蓝边框
-static constexpr COLORREF kClrBlueAccent   = RGB(80, 170, 255); // #50AAFF 唯一主高亮
-static constexpr COLORREF kClrTextPrimary  = RGB(245, 250, 255); // 纯白高亮文字
-static constexpr COLORREF kClrTextMuted    = RGB(150, 170, 195); // 中性透白次级文字
-static constexpr COLORREF kClrTextDim      = RGB(90, 110, 135);  // 暗灰注释文字
-static constexpr COLORREF kClrStagePending = RGB(45, 60, 85);   // 未开始节点深灰
-static constexpr COLORREF kClrStageDone    = RGB(80, 170, 255); // 已完成节点星蓝
-static constexpr COLORREF kClrErrorRed     = RGB(235, 80, 80);   // 失败异常红
+constexpr COLORREF background = RGB(17, 25, 39);
+constexpr COLORREF footer = RGB(24, 35, 51);
+constexpr COLORREF track = RGB(69, 87, 108);
+constexpr COLORREF primary = RGB(240, 246, 251);
+constexpr COLORREF secondary = RGB(174, 191, 208);
+constexpr COLORREF accent = RGB(127, 212, 248);
+constexpr COLORREF fault = RGB(255, 166, 155);
 
-// -----------------------------------------------------------------------------
-// Scheme C: Celestial Astrolabe Emblem (Octagram Star in Compass Ring, No Needle)
-// -----------------------------------------------------------------------------
-static void DrawEmblemOctagram(HDC hdc, int cx, int cy, int radius, COLORREF color) {
-    HPEN pen = CreatePen(PS_SOLID, 2, color);
-    HBRUSH brush = CreateSolidBrush(color);
-    auto old_pen = SelectObject(hdc, pen);
-    auto old_brush = SelectObject(hdc, brush);
+struct Phase {
+    const wchar_t* label;
+    int step;
+};
 
-    // Outer ring
-    SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
-    Ellipse(hdc, cx - radius, cy - radius, cx + radius, cy + radius);
-    SelectObject(hdc, brush);
-
-    // 4 Cardinal Star Points (North, South, East, West)
-    int tip_len = radius + (int)(radius * 0.35f);
-    int inner_w = (int)(radius * 0.22f);
-
-    POINT ptN[3] = { { cx, cy - tip_len }, { cx + inner_w, cy - radius + 2 }, { cx - inner_w, cy - radius + 2 } };
-    Polygon(hdc, ptN, 3);
-    POINT ptS[3] = { { cx, cy + tip_len }, { cx + inner_w, cy + radius - 2 }, { cx - inner_w, cy + radius - 2 } };
-    Polygon(hdc, ptS, 3);
-    POINT ptE[3] = { { cx + tip_len, cy }, { cx + radius - 2, cy + inner_w }, { cx + radius - 2, cy - inner_w } };
-    Polygon(hdc, ptE, 3);
-    POINT ptW[3] = { { cx - tip_len, cy }, { cx - radius + 2, cy + inner_w }, { cx - radius + 2, cy - inner_w } };
-    Polygon(hdc, ptW, 3);
-
-    // Central 8-Pointed Primogem / Octagram Star (Candidate C, No Clock Hand)
-    int r_outer = (int)(radius * 0.65f);
-    int r_inner = (int)(radius * 0.24f);
-
-    POINT star[16];
-    for (int i = 0; i < 16; ++i) {
-        float angle = i * (3.14159265f / 8.0f) - (3.14159265f / 2.0f);
-        int r = (i % 2 == 0) ? r_outer : r_inner;
-        star[i].x = cx + (int)(cosf(angle) * r);
-        star[i].y = cy + (int)(sinf(angle) * r);
+Phase Describe(InjectorStage stage) {
+    switch (stage) {
+    case InjectorStage::Checking:    return {L"正在校验", 0};
+    case InjectorStage::WaitingGame: return {L"等待操作", 1};
+    case InjectorStage::CheckingGame: return {L"正在校验", 1};
+    case InjectorStage::Terminating: return {L"正在重启", 1};
+    case InjectorStage::Starting:    return {L"正在加载", 1};
+    case InjectorStage::Waiting:     return {L"等待就绪", 2};
+    case InjectorStage::Complete:    return {L"已就绪", 2};
+    case InjectorStage::Failed:      return {L"加载未完成", -1};
+    case InjectorStage::Cancelled:   return {L"已取消", -1};
     }
-    Polygon(hdc, star, 16);
-
-    // Small central core
-    int hub_r = (int)(radius * 0.16f);
-    if (hub_r < 2) hub_r = 2;
-    Ellipse(hdc, cx - hub_r, cy - hub_r, cx + hub_r, cy + hub_r);
-
-    SelectObject(hdc, old_brush);
-    SelectObject(hdc, old_pen);
-    DeleteObject(brush);
-    DeleteObject(pen);
+    return {L"", -1};
 }
 
-// -----------------------------------------------------------------------------
-// Draw Stepper Pipeline Indicator (Checking -> Launching -> Injecting -> Ready)
-// -----------------------------------------------------------------------------
-static void DrawStagePipeline(HDC hdc, int left, int top, int right, InjectorStage current_stage, float scale) {
-    struct StageStep {
-        const wchar_t* name;
-        InjectorStage target;
+const wchar_t* Hint(const InjectorUiState& state) {
+    if (!state.detail_hint.empty()) return state.detail_hint.c_str();
+    if (state.stage == InjectorStage::WaitingGame)
+        return L"检测到游戏后会自动继续，初始化成功后记住路径。关闭窗口可取消等待。";
+    if (state.stage == InjectorStage::Waiting)
+        return L"游戏内功能默认暂停。就绪后此窗口自动关闭，按 Insert 打开菜单，按 F10 停用。";
+    if (state.load_started)
+        return L"关闭窗口后游戏和组件继续运行。游戏内按 Insert 打开菜单，按 F10 停用。";
+    return L"就绪后加载器会自动退出。关闭窗口可取消后续步骤，已启动的游戏会继续运行。";
+}
+
+void Fill(HDC dc, RECT rect, COLORREF color) {
+    SetDCBrushColor(dc, color);
+    FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+}
+
+void Text(HDC dc, RECT rect, const wchar_t* value, COLORREF color, UINT flags) {
+    SetTextColor(dc, color);
+    DrawTextW(dc, value, -1, &rect, flags | DT_NOPREFIX);
+}
+
+void Draw(HDC dc, int width, int height, HICON icon, const InjectorUiState& state) {
+    const double scale = (std::min)(double(width) / kInjectorDesignWidth,
+                                    double(height) / kInjectorDesignHeight);
+    auto px = [scale](int value) { return static_cast<int>(std::lround(value * scale)); };
+    auto font = [&](int height_px, int weight) {
+        return CreateFontW(-px(height_px), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                           0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
     };
-    StageStep steps[4] = {
-        { L"环境校验", InjectorStage::Checking },
-        { L"启动游戏", InjectorStage::Starting },
-        { L"挂载组件", InjectorStage::Waiting },
-        { L"初始化完成", InjectorStage::Complete }
-    };
+    const int left = px(26), right = width - left, bottom_band = height - px(58);
+    const bool failed = state.stage == InjectorStage::Failed;
+    const Phase phase = Describe(state.stage);
+    const COLORREF highlight = failed ? fault : accent;
+    const int saved = SaveDC(dc);
+    SetBkMode(dc, TRANSPARENT);
+    Fill(dc, {0, 0, width, bottom_band}, background);
+    Fill(dc, {0, bottom_band, width, height}, footer);
 
-    int active_idx = 0;
-    if (current_stage == InjectorStage::WaitingGame) active_idx = 1; // 首次启动等待原神进程
-    else if (current_stage == InjectorStage::Terminating || current_stage == InjectorStage::Starting) active_idx = 1;
-    else if (current_stage == InjectorStage::Waiting) active_idx = 2;
-    else if (current_stage == InjectorStage::Complete) active_idx = 3;
-    else if (current_stage == InjectorStage::Failed || current_stage == InjectorStage::Cancelled) active_idx = -1;
+    HFONT regular = font(14, FW_NORMAL);
+    HFONT heading = font(23, FW_SEMIBOLD);
+    auto original_font = SelectObject(dc, regular);
+    if (icon) DrawIconEx(dc, left, px(14), icon, px(32), px(32), 0, nullptr, DI_NORMAL);
+    Text(dc, {left + px(42), px(12), right, px(49)}, L"伊斯塔露加载器", primary, DT_SINGLELINE | DT_VCENTER);
+    std::wstring error_label;
+    if (failed && state.error_code) error_label = L"错误 " + std::to_wstring(state.error_code);
+    Text(dc, {left, px(12), right, px(49)}, error_label.empty() ? phase.label : error_label.c_str(),
+         highlight, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
 
-    int count = 4;
-    int total_w = right - left;
-    int step_w = total_w / count;
+    SelectObject(dc, heading);
+    RECT title{left, px(59), right, bottom_band};
+    RECT measured = title;
+    DrawTextW(dc, state.main_status.c_str(), -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+    title.bottom = (std::min)(measured.bottom, static_cast<LONG>(bottom_band - px(46)));
+    Text(dc, title, state.main_status.c_str(), primary, DT_WORDBREAK | DT_END_ELLIPSIS);
+    SelectObject(dc, regular);
+    Text(dc, {left, title.bottom + px(6), right, bottom_band - px(4)}, Hint(state), secondary, DT_WORDBREAK);
 
-    int font_sz = (int)(-11.0f * scale);
-    if (font_sz > -10) font_sz = -10;
-    HFONT stage_font = CreateFontW(font_sz, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                                   DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
-    auto old_font = SelectObject(hdc, stage_font);
-
-    int cy = top + (int)(8.0f * scale);
-
-    for (int i = 0; i < count; ++i) {
-        int cx = left + i * step_w + step_w / 2;
-        bool is_done = (active_idx >= 0 && i < active_idx) || (active_idx == 3 && i == 3);
-        bool is_curr = (active_idx >= 0 && i == active_idx);
-        bool is_err  = (current_stage == InjectorStage::Failed && i == 0);
-
-        COLORREF dot_clr = is_err ? kClrErrorRed : (is_done || is_curr ? kClrBlueAccent : kClrStagePending);
-        HBRUSH dot_brush = CreateSolidBrush(dot_clr);
-        HPEN dot_pen = CreatePen(PS_SOLID, 1, is_curr ? kClrTextPrimary : dot_clr);
-        auto ob = SelectObject(hdc, dot_brush);
-        auto op = SelectObject(hdc, dot_pen);
-
-        int dot_r = (int)((is_curr ? 5.0f : 4.0f) * scale);
-        Ellipse(hdc, cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r);
-
-        SelectObject(hdc, ob);
-        SelectObject(hdc, op);
-        DeleteObject(dot_brush);
-        DeleteObject(dot_pen);
-
-        // Connecting line to next stage
-        if (i < count - 1) {
-            int next_cx = left + (i + 1) * step_w + step_w / 2;
-            HPEN line_pen = CreatePen(PS_SOLID, 1, is_done ? kClrBlueAccent : kClrStagePending);
-            auto ol = SelectObject(hdc, line_pen);
-            MoveToEx(hdc, cx + (int)(8.0f * scale), cy, nullptr);
-            LineTo(hdc, next_cx - (int)(8.0f * scale), cy);
-            SelectObject(hdc, ol);
-            DeleteObject(line_pen);
+    if (phase.step >= 0) {
+        constexpr const wchar_t* labels[] = {L"检查组件", L"准备游戏", L"确认就绪"};
+        int gap = px(10), available = right - left + gap;
+        for (int i = 0; i < 3; ++i) {
+            int x = left + available * i / 3, end = left + available * (i + 1) / 3 - gap;
+            Fill(dc, {x, bottom_band + px(12), end, bottom_band + px(i == phase.step ? 16 : 14)},
+                 i <= phase.step ? accent : track);
+            Text(dc, {x, bottom_band + px(21), end, height - px(4)}, labels[i],
+                 i == phase.step ? primary : secondary, DT_SINGLELINE);
         }
-
-        // Label
-        RECT text_rc = { cx - (int)(40.0f * scale), cy + (int)(6.0f * scale), cx + (int)(40.0f * scale), cy + (int)(26.0f * scale) };
-        SetTextColor(hdc, is_curr ? kClrTextPrimary : (is_done ? kClrBlueAccent : kClrTextDim));
-        DrawTextW(hdc, steps[i].name, -1, &text_rc, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX);
+    } else if (failed) {
+        Text(dc, {left, bottom_band, right, height}, L"加载日志   Istaroth-injector.log",
+             secondary, DT_SINGLELINE | DT_VCENTER);
     }
 
-    SelectObject(hdc, old_font);
-    DeleteObject(stage_font);
+    if (original_font) SelectObject(dc, original_font);
+    if (saved) RestoreDC(dc, saved);
+    DeleteObject(regular);
+    DeleteObject(heading);
 }
 
-// -----------------------------------------------------------------------------
-// Main Public Render Function: Double-Buffered, DPI-Scaled Injector Workplace
-// -----------------------------------------------------------------------------
-void RenderInjectorUi(HDC hdc, const RECT& client_rect, const InjectorUiState& state) {
-    const int w = client_rect.right - client_rect.left;
-    const int h = client_rect.bottom - client_rect.top;
-    if (w <= 0 || h <= 0) return;
+} // namespace
 
-    // Compute dynamic DPI scale factor based on 640x220 design baseline
-    float scale = state.dpi_scale;
-    if (scale <= 0.0f) {
-        float scale_w = (float)w / (float)kInjectorDesignWidth;
-        float scale_h = (float)h / (float)kInjectorDesignHeight;
-        scale = (scale_w < scale_h) ? scale_w : scale_h;
-        if (scale < 0.65f) scale = 0.65f;
+HWND CreateInjectorWindow(HINSTANCE instance, WNDPROC window_proc) {
+    WNDCLASSW wc{};
+    wc.hInstance = instance;
+    wc.lpfnWndProc = window_proc;
+    wc.lpszClassName = L"Istaroth.Injector";
+    wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return nullptr;
+
+    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    const UINT dpi = GetDpiForSystem();
+    RECT bounds{0, 0, MulDiv(kInjectorDesignWidth, dpi, 96), MulDiv(kInjectorDesignHeight, dpi, 96)};
+    if (!AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, dpi)) return nullptr;
+    return CreateWindowW(wc.lpszClassName, L"伊斯塔露加载器", style, CW_USEDEFAULT, CW_USEDEFAULT,
+                         bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, instance, nullptr);
+}
+
+InjectorUiRenderer::~InjectorUiRenderer() { Reset(); }
+
+void InjectorUiRenderer::Reset() {
+    if (surface) DeleteDC(surface);
+    if (bitmap) DeleteObject(bitmap);
+    if (icon) DestroyIcon(icon);
+    icon = nullptr;
+    surface = nullptr;
+    bitmap = nullptr;
+    size = {};
+}
+
+void InjectorUiRenderer::Paint(HDC dc, const RECT& client, const InjectorUiState& state) {
+    const int width = client.right - client.left, height = client.bottom - client.top;
+    if (width <= 0 || height <= 0) return;
+    const bool resized = width != size.cx || height != size.cy;
+    if (resized) {
+        Reset();
+        surface = CreateCompatibleDC(dc);
+        bitmap = CreateCompatibleBitmap(dc, width, height);
+        if (!surface || !bitmap || !SelectObject(surface, bitmap)) {
+            Reset();
+            Draw(dc, width, height, LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101)), state);
+            return;
+        }
+        const double scale = (std::min)(double(width) / kInjectorDesignWidth, double(height) / kInjectorDesignHeight);
+        const int icon_size = (std::max)(1L, std::lround(32 * scale));
+        icon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101), IMAGE_ICON,
+                                             icon_size, icon_size, 0));
+        size = {width, height};
     }
-
-    // Double buffering in memory
-    HDC mem_dc = CreateCompatibleDC(hdc);
-    HBITMAP mem_bm = CreateCompatibleBitmap(hdc, w, h);
-    auto old_bm = SelectObject(mem_dc, mem_bm);
-
-    SetBkMode(mem_dc, TRANSPARENT);
-
-    // 1. Fill background (深渊曜黑)
-    HBRUSH bg_brush = CreateSolidBrush(kClrBgDark);
-    FillRect(mem_dc, &client_rect, bg_brush);
-    DeleteObject(bg_brush);
-
-    // 2. Content Card (深石蓝毛玻璃卡片矩形)
-    int pad_x = (int)(16.0f * scale);
-    int pad_y = (int)(12.0f * scale);
-    RECT card_rc = { pad_x, pad_y, w - pad_x, h - pad_y };
-
-    HBRUSH card_brush = CreateSolidBrush(kClrCardBg);
-    HPEN card_pen = CreatePen(PS_SOLID, 1, kClrBorderSubtle);
-    auto ob = SelectObject(mem_dc, card_brush);
-    auto op = SelectObject(mem_dc, card_pen);
-    int round_d = (int)(14.0f * scale);
-    RoundRect(mem_dc, card_rc.left, card_rc.top, card_rc.right, card_rc.bottom, round_d, round_d);
-    SelectObject(mem_dc, ob);
-    SelectObject(mem_dc, op);
-    DeleteObject(card_brush);
-    DeleteObject(card_pen);
-
-    // 3. Draw Brand Emblem (Candidate C: Octagram Star in Compass, No Hand)
-    int emblem_r = (int)(13.0f * scale);
-    int emblem_cx = card_rc.left + (int)(30.0f * scale);
-    int emblem_cy = card_rc.top + (int)(30.0f * scale);
-    COLORREF emblem_clr = (state.stage == InjectorStage::Failed) ? kClrErrorRed : kClrBlueAccent;
-    DrawEmblemOctagram(mem_dc, emblem_cx, emblem_cy, emblem_r, emblem_clr);
-
-    // 4. Header title: "伊斯塔露加载器" (用户最新精确命名，无中点无额外术语)
-    int title_font_sz = (int)(-15.0f * scale);
-    HFONT title_font = CreateFontW(title_font_sz, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-                                   DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
-    auto old_font = SelectObject(mem_dc, title_font);
-    SetTextColor(mem_dc, kClrTextPrimary);
-    RECT title_rc = { emblem_cx + (int)(22.0f * scale), card_rc.top + (int)(14.0f * scale),
-                      emblem_cx + (int)(220.0f * scale), card_rc.top + (int)(42.0f * scale) };
-    DrawTextW(mem_dc, L"伊斯塔露加载器", -1, &title_rc, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
-    SelectObject(mem_dc, old_font);
-    DeleteObject(title_font);
-
-    // 5. Stepper Pipeline on upper right
-    int pipeline_left = emblem_cx + (int)(180.0f * scale);
-    int pipeline_right = card_rc.right - (int)(16.0f * scale);
-    DrawStagePipeline(mem_dc, pipeline_left, card_rc.top + (int)(10.0f * scale), pipeline_right, state.stage, scale);
-
-    // Horizontal hairline divider
-    HPEN div_pen = CreatePen(PS_SOLID, 1, kClrBorderSubtle);
-    auto old_dp = SelectObject(mem_dc, div_pen);
-    int div_y = card_rc.top + (int)(48.0f * scale);
-    MoveToEx(mem_dc, card_rc.left + (int)(16.0f * scale), div_y, nullptr);
-    LineTo(mem_dc, card_rc.right - (int)(16.0f * scale), div_y);
-    SelectObject(mem_dc, old_dp);
-    DeleteObject(div_pen);
-
-    // 6. Main Status text (支持自动折行，纯白高亮，适度行间距)
-    int status_font_sz = (int)(-14.0f * scale);
-    HFONT status_font = CreateFontW(status_font_sz, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                                    DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
-    SelectObject(mem_dc, status_font);
-    SetTextColor(mem_dc, (state.stage == InjectorStage::Failed) ? kClrErrorRed : kClrTextPrimary);
-
-    RECT status_rc = { card_rc.left + (int)(22.0f * scale),
-                       div_y + (int)(10.0f * scale),
-                       card_rc.right - (int)(22.0f * scale),
-                       div_y + (int)(68.0f * scale) };
-    std::wstring main_msg = state.main_status.empty() ? L"正在准备加载环境..." : state.main_status;
-    DrawTextW(mem_dc, main_msg.c_str(), -1, &status_rc, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
-
-    // 7. Detail hint text (辅助说明，区分加载器关闭与游戏内F10停用，透白中性色)
-    int hint_font_sz = (int)(-12.0f * scale);
-    HFONT hint_font = CreateFontW(hint_font_sz, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                                  DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
-    SelectObject(mem_dc, hint_font);
-    SetTextColor(mem_dc, kClrTextMuted);
-
-    RECT hint_rc = { card_rc.left + (int)(22.0f * scale),
-                     status_rc.bottom + (int)(4.0f * scale),
-                     card_rc.right - (int)(22.0f * scale),
-                     card_rc.bottom - (int)(10.0f * scale) };
-    std::wstring detail_msg = state.detail_hint.empty() ?
-        L"提示：初始化确认后本加载器将自动退出。关闭本窗口不会卸载已注入组件或结束游戏；游戏内按 F10 停用。" :
-        state.detail_hint;
-    if (state.detail_hint.empty() && state.stage == InjectorStage::WaitingGame) {
-        detail_msg = L"首次使用：未配置游戏路径，请手动启动原神。检测到游戏后将自动校验并记住路径，等待期间可点击右上角 [×] 取消。";
+    if (resized || previous.stage != state.stage || previous.main_status != state.main_status ||
+        previous.detail_hint != state.detail_hint || previous.error_code != state.error_code ||
+        previous.load_started != state.load_started) {
+        Draw(surface, width, height, icon, state);
+        previous = state;
     }
-    DrawTextW(mem_dc, detail_msg.c_str(), -1, &hint_rc, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
-
-    SelectObject(mem_dc, old_font);
-    DeleteObject(status_font);
-    DeleteObject(hint_font);
-
-    // Blit to screen
-    BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
-
-    SelectObject(mem_dc, old_bm);
-    DeleteObject(mem_bm);
-    DeleteDC(mem_dc);
+    BitBlt(dc, client.left, client.top, width, height, surface, 0, 0, SRCCOPY);
 }
 
 } // namespace istaroth

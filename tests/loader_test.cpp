@@ -91,8 +91,7 @@ int wmain() {
     Check(CreateDirectoryW(directory.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS);
     std::wstring ini=directory+L"Istaroth.ini",game=directory+TargetName,wrong=directory+L"launcher.exe";
     Write(game,std::string(8*1024*1024,'x'));Write(wrong,"not a game");
-    WNDCLASSW wc{};wc.lpfnWndProc=Window;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=L"Istaroth.LoaderChecks";RegisterClassW(&wc);
-    progress=CreateWindowW(wc.lpszClassName,L"Owned loader check",WindowStyle,0,0,650,200,nullptr,nullptr,wc.hInstance,nullptr);close_window=progress;
+    progress=CreateInjectorWindow(GetModuleHandleW(nullptr),Window);close_window=progress;
     Check(progress!=nullptr);Check((GetWindowLongPtrW(progress,GWL_STYLE)&WS_SYSMENU)!=0);
     for(int size:{16,24,32,48,64,128,256}) {
         HICON icon=(HICON)LoadImageW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(101),IMAGE_ICON,size,size,0);Check(icon!=nullptr);
@@ -106,8 +105,26 @@ int wmain() {
     bitmap.bmiHeader.biWidth=640;bitmap.bmiHeader.biHeight=-220;bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;
     void* pixels=nullptr;HBITMAP image=CreateDIBSection(nullptr,&bitmap,DIB_RGB_COLORS,&pixels,nullptr,0);Check(dc&&image&&pixels);
     auto old=SelectObject(dc,image);RECT client={0,0,640,220};InjectorUiState paint_state;paint_state.main_status=L"首次使用，请手动启动原神。正在等待游戏启动。";
-    RenderInjectorUi(dc,client,paint_state);DWORD objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
-    for(unsigned i=0;i<40;i++)RenderInjectorUi(dc,client,paint_state);Check(objects==GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS));
+    InjectorUiRenderer painter;
+    // Measure lifetime after GDI has initialized its process-wide drawing resources.
+    painter.Paint(dc,client,paint_state);painter.Reset();GdiFlush();
+    DWORD initial_objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
+    painter.Paint(dc,client,paint_state);GdiFlush();
+    std::vector<BYTE> first((BYTE*)pixels,(BYTE*)pixels+640*220*4);
+    DWORD objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
+    for(unsigned i=0;i<40;i++)painter.Paint(dc,client,paint_state);
+    GdiFlush();Check(!memcmp(first.data(),pixels,first.size()));
+    Check(objects==GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS));
+    paint_state.main_status=L"正在检查组件";
+    painter.Paint(dc,client,paint_state);GdiFlush();Check(memcmp(first.data(),pixels,first.size())!=0);
+    paint_state.main_status=L"首次使用，请手动启动原神。正在等待游戏启动。";
+    paint_state.stage=InjectorStage::Failed;paint_state.error_code=5;
+    paint_state.detail_hint=L"请查看错误说明。";
+    painter.Paint(dc,client,paint_state);GdiFlush();Check(memcmp(first.data(),pixels,first.size())!=0);
+    RECT small={0,0,320,110};painter.Paint(dc,small,paint_state);
+    paint_state.stage=InjectorStage::Checking;paint_state.error_code=0;paint_state.detail_hint.clear();
+    painter.Paint(dc,client,paint_state);GdiFlush();Check(!memcmp(first.data(),pixels,first.size()));
+    painter.Reset();GdiFlush();Check(initial_objects==GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS));
     SelectObject(dc,old);DeleteObject(image);DeleteDC(dc);
     Reset();std::wstring full;Check(!GamePath(L"",full));Check(!GamePath(wrong,full));Check(!GamePath(directory,full));Check(GamePath(game,full)&&full==game);
     DeleteFileW(ini.c_str());Check(ConfiguredGamePath().empty());Write(ini,"[Istaroth]\r\nGamePath=\r\n");Check(ConfiguredGamePath().empty());
@@ -121,7 +138,10 @@ int wmain() {
     SaveGamePath(detected);Reset();Check(ConfiguredGamePath()==game);
     std::wstring unicode_dir=directory+L"\u8def\u5f84 \U0001f31f\\";Check(CreateDirectoryW(unicode_dir.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS);
     std::wstring unicode_game=unicode_dir+TargetName;Write(unicode_game,"Unicode path");DeleteFileW(ini.c_str());path_discovered=true;SaveGamePath(unicode_game);Check(ConfiguredGamePath()==unicode_game);
-    Reset();Hash(game);DWORD before=0,after=0;GetProcessHandleCount(GetCurrentProcess(),&before);cancel_read=true;reads=0;Expect(ERROR_CANCELLED,[&]{Hash(game);});cancel_read=false;
+    FileHasher verifier;
+    Write(wrong,"");Check(verifier.Sha256(wrong)=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    Write(wrong,"abc");Check(verifier.Sha256(wrong)=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    Reset();Check(verifier.Sha256(game)=="0c77bc0a0795a93612d45256897456d0fcb24f151c44c150d07ecd03f4ef5168");DWORD before=0,after=0;GetProcessHandleCount(GetCurrentProcess(),&before);cancel_read=true;reads=0;Expect(ERROR_CANCELLED,[&]{verifier.Sha256(game);});cancel_read=false;
     GetProcessHandleCount(GetCurrentProcess(),&after);Check(before==after);Check(!load_started&&!runtime_ready);
     Reset();cancel_requested=true;Expect(ERROR_CANCELLED,[]{Load(GetCurrentProcess());});Check(thread_starts==0);
     Reset();Expect(ERROR_CANCELLED,[]{Load(GetCurrentProcess());});Check(thread_starts==1&&load_started&&thread_saw_memory);
@@ -162,9 +182,9 @@ int wmain() {
     WritePrivateProfileStringW(L"Istaroth",L"GamePath",game.c_str(),entry_ini.c_str());Check(entry(L"OwnedLoader.exe --quiet")==ERROR_REVISION_MISMATCH);
     Check(entry(L"OwnedLoader.exe")==ERROR_REVISION_MISMATCH);Check(entry_title_ok);
     Check(process_starts==0&&terminations==0&&thread_starts==1&&!load_started&&!runtime_ready);
-    auto previous_receipt=Hash(entry_dir+L"Istaroth-injector-result.json");
+    auto previous_receipt=verifier.Sha256(entry_dir+L"Istaroth-injector-result.json");
     Check(entry(L"OwnedLoader.exe --diagnostics --quiet")==0);
-    Check(Hash(entry_dir+L"Istaroth-injector-result.json")==previous_receipt);
+    Check(verifier.Sha256(entry_dir+L"Istaroth-injector-result.json")==previous_receipt);
     WIN32_FIND_DATAW report{};HANDLE reports=FindFirstFileW((entry_dir+L"reports\\Istaroth-report-*.txt").c_str(),&report);
     Check(reports!=INVALID_HANDLE_VALUE);if(reports!=INVALID_HANDLE_VALUE)FindClose(reports);
     Check(entry(L"OwnedLoader.exe --diagnostics --quiet --restart")==ERROR_INVALID_PARAMETER);
