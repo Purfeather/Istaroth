@@ -109,7 +109,7 @@ try:
     run('ui-review.exe', ['--test'])
     run('material-test.exe', seconds=50)
     run('loader-test.exe')
-    for mode in ['handover','dead-listed','loaded','crash','repeat','cancel','module-absent','pending-file']:
+    for mode in ['handover','os-handover','os-wrong-hash','dead-listed','loaded','crash','repeat','cancel','module-absent','pending-file']:
         run('bootstrap/bootstrap-test.exe', [mode], out/'tests/bootstrap')
     run('actions-test.exe')
     run('curtain-test.exe')

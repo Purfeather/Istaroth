@@ -131,14 +131,24 @@ static void VerifyInBackground(Work work) {
     if (failure) std::rethrow_exception(failure);
 }
 
+static const Payload* GameTarget(const wchar_t* path) {
+    const wchar_t* backslash = wcsrchr(path, L'\\');
+    const wchar_t* slash = wcsrchr(path, L'/');
+    const wchar_t* name = backslash ? backslash + 1 : path;
+    if (slash && slash >= name) name = slash + 1;
+    for (const auto& target : GameTargets) {
+        if (_wcsicmp(name, target.name) == 0) return &target;
+    }
+    return nullptr;
+}
+
 static bool GamePath(const std::wstring& input,std::wstring& full) {
     if(input.empty())return false;
     std::wstring path=input;std::replace(path.begin(),path.end(),L'/',L'\\');
     wchar_t buffer[32768];DWORD length=GetFullPathNameW(path.c_str(),32768,buffer,nullptr);
     if(!length||length>=32768)return false;
-    const wchar_t* base=wcsrchr(buffer,L'\\');base=base?base+1:buffer;
     DWORD attributes=GetFileAttributesW(buffer);
-    if(_wcsicmp(base,TargetName)||attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;
+    if(!GameTarget(buffer)||attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;
     full=buffer;return true;
 }
 [[maybe_unused]] static std::wstring ConfiguredGamePath() {
@@ -168,12 +178,12 @@ static std::wstring ProcessPath(HANDLE process) {
     wchar_t path[32768];DWORD size=32768;
     if(!QueryFullProcessImageNameW(process,0,path,&size)){DWORD error=GetLastError();RequireAlive(process);throw error;}return path;
 }
-static DWORD FindGamePid() {
+static DWORD FindGamePid(const Payload* game = nullptr) {
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);if(snapshot==INVALID_HANDLE_VALUE)throw GetLastError();
     PROCESSENTRY32W entry={sizeof(entry)};std::vector<DWORD> matches;
     BOOL found=Process32FirstW(snapshot,&entry);
     if(!found){DWORD error=GetLastError();CloseHandle(snapshot);throw error;}
-    do {if(!_wcsicmp(entry.szExeFile,TargetName)) {
+    do {if (const auto* target = GameTarget(entry.szExeFile); target && (!game || target == game)) {
         HANDLE probe=OpenProcess(SYNCHRONIZE,FALSE,entry.th32ProcessID);bool exited=false;
         if(probe){exited=WaitForSingleObject(probe,0)==WAIT_OBJECT_0;CloseHandle(probe);}
         else exited=GetLastError()==ERROR_INVALID_PARAMETER;
@@ -213,7 +223,10 @@ static HANDLE ClaimGame() {
     return guard;
 }
 static void Existing(const std::wstring& expected,bool restart) {
-    CheckCancelled();DWORD pid=FindGamePid();if(!pid)return;
+    CheckCancelled();
+    const auto* target = GameTarget(expected.c_str());
+    if (!target) throw (DWORD)ERROR_INVALID_NAME;
+    DWORD pid=FindGamePid(target);if(!pid)return;
     HANDLE process=OpenProcess(PROCESS_TERMINATE|PROCESS_QUERY_LIMITED_INFORMATION|SYNCHRONIZE,FALSE,pid);if(!process)throw GetLastError();
     try {
         if(_wcsicmp(ProcessPath(process).c_str(),expected.c_str()))throw (DWORD)ERROR_INVALID_NAME;
@@ -320,7 +333,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     directory=own;directory.resize(directory.find_last_of(L"\\/")+1);
     if(export_report) {
         if(error||restart)return ERROR_INVALID_PARAMETER;
-        std::wstring report;error=diagnostics::ExportReport(directory,TargetSha256,report);
+        const auto* target = GameTarget(ConfiguredGamePath().c_str());
+        std::wstring report;
+        error = diagnostics::ExportReport(directory, target ? target->sha256 : "no supported game configured", report);
         if(!quiet) {
             std::wstring text=error?L"无法保存诊断报告。错误代码 "+std::to_wstring(error):L"诊断报告已保存到以下位置：\n"+report+L"\n\n反馈问题时，请附上此报告，并说明出错时间和当时看到的现象。";
             MessageBoxW(nullptr,text.c_str(),L"伊斯塔露 · 诊断报告",MB_OK|(error?MB_ICONERROR:MB_ICONINFORMATION));
@@ -342,7 +357,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         if(error)throw error;
         std::wstring game;
 #ifdef ISTAROTH_FIXTURE
-        game=directory+TargetName;
+        game=directory+GameTargets[0].name;
 #else
         game=ConfiguredGamePath();if(game.empty()&&quiet)throw (DWORD)ERROR_PATH_NOT_FOUND;
 #endif
@@ -362,11 +377,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
         if(game.empty())process=WaitForGame(game);
         operation="validating_game";
         Progress(L"正在检查《原神》的版本", InjectorStage::CheckingGame);
-        const wchar_t* base=wcsrchr(game.c_str(),L'\\');base=base?base+1:game.c_str();
-        if (_wcsicmp(base, TargetName)) throw (DWORD)ERROR_REVISION_MISMATCH;
+        const auto* target = GameTarget(game.c_str());
+        if (!target) throw (DWORD)ERROR_REVISION_MISMATCH;
         VerifyInBackground([&](const std::atomic_bool& stop) {
             auto file = OpenReadOnly(game);
-            if (verifier.Sha256(file.get(), stop) != TargetSha256) throw (DWORD)ERROR_REVISION_MISMATCH;
+            if (verifier.Sha256(file.get(), stop) != target->sha256) throw (DWORD)ERROR_REVISION_MISMATCH;
         });
         if(!process) {
             operation="starting_game";

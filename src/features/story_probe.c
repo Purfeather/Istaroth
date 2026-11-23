@@ -4,8 +4,6 @@
 #include <stdint.h>
 #ifndef GST_STORY_TEST
 #include "story_profile.h"
-#else
-#define STORY_OBJECT_INDEX_HINT 140001U
 #endif
 
 #define RECORDS 16
@@ -52,9 +50,15 @@ typedef struct {
 _Static_assert(sizeof(ProbeField) == 64 && sizeof(ProbeRecord) == 896 && sizeof(ProbeActivity) == 24 && sizeof(ProbeDirector)==56 && sizeof(Probe) == 19904, "probe ABI v7");
 static HMODULE module;
 static BYTE *image;
+#ifndef GST_STORY_TEST
+static const IstarothGameBuild *game_build;
+static const StoryProfile *story_profile;
+#endif
 static Probe working, *output=&working, *published;
 static uintptr_t object_map_slot, mono_vtable, director_vtable, gc_handle_table, class_arena_slot;
 static uintptr_t graph_manager_slot;
+static DWORD class_name_offset = 0x70;
+static DWORD object_index_hint = 140001U;
 static uintptr_t tracked_map,tracked_chunks[2];
 static uint64_t tracked_counts[2];
 static DWORD cursor[2], table_kind, completed_tables, catalog_cursor;
@@ -154,10 +158,8 @@ static void catalog(const char *name) {
 }
 static BOOL class_names(uintptr_t object,char *name,char *space) {
     uintptr_t klass=pointer(object);
-    /* The current executable's class-name getter is mov rax,[rcx+0x70]; ret.
-       Its namespace getter uses a different path. Do not infer that layout. */
     zero(space,32);
-    return klass && text_at(name,64,pointer(klass+0x70)) && name[0];
+    return klass && text_at(name,64,pointer(klass+class_name_offset)) && name[0];
 }
 static uintptr_t managed_from_prefix(const BYTE *native) {
     DWORD kind=0,handle=0;
@@ -199,7 +201,7 @@ static BOOL snapshot_class_name(uintptr_t managed,char *name) {
     }
     class_cache[index].klass=klass; class_cache[index].tick=now; class_cache[index].valid=FALSE;
     zero(class_cache[index].name,64);
-    if(!snapshot_read(&string,klass+0x70,8) ||
+    if(!snapshot_read(&string,klass+class_name_offset,8) ||
        !snapshot_read(buffer,string,64)) return FALSE;
     for(DWORD i=0;i<64;i++) {
         BYTE c=(BYTE)buffer[i];
@@ -290,6 +292,11 @@ static void fields(ProbeRecord *record) {
     }
 }
 static void update_fields_raw(ProbeRecord *record,BOOL force) {
+#ifndef GST_STORY_TEST
+    // Overseas field metadata has a different encoding. The action gate uses
+    // native MonoBehaviour identity, hierarchy and live managed UI links.
+    if (game_build->overseas) return;
+#endif
     DWORD index=(DWORD)(record-output->records); ULONGLONG now=GetTickCount64();
     if(!contains(record->class_name,"Sitcom") && !equal(record->class_name,"MonoTalkDialog") &&
        !contains(record->class_name,"Curtain") && !contains(record->class_name,"ClickContinue")) {
@@ -663,11 +670,11 @@ static void scan(void) {
     }
     static ULONGLONG last_hint;
     ULONGLONG hint_now=GetTickCount64();
-    if(hint_now-last_hint>=1000 && budget_now()<deadline && output->table_counts[0]>STORY_OBJECT_INDEX_HINT) {
+    if(object_index_hint && hint_now-last_hint>=1000 && budget_now()<deadline && output->table_counts[0]>object_index_hint) {
         last_hint=hint_now;
         test_slice_delay("GSTStoryHintDelay");
         D(dg_source=3; dg.events[0]++; dg_epoch(3,chunks[0],output->table_counts[0]));
-        scan_batch(chunks[0],STORY_OBJECT_INDEX_HINT,1,0,deadline);
+        scan_batch(chunks[0],object_index_hint,1,0,deadline);
     }
     output->head_cursors[0]=cursor[0]; output->head_cursors[1]=cursor[1];
     D(if(budget_now()>deadline) dg.events[7]++);
@@ -685,17 +692,15 @@ static BOOL profile(void) {
     graph_manager_slot=(uintptr_t)GetProcAddress((HMODULE)image,"GSTStoryGraphManager");
     return object_map_slot && mono_vtable && director_vtable && gc_handle_table && class_arena_slot && graph_manager_slot;
 #else
-    for(SIZE_T i=0;i<sizeof(story_checks)/sizeof(story_checks[0]);i++) {
-        BYTE actual[64];
-        if(!read_at(actual,(uintptr_t)image+story_checks[i].rva,story_checks[i].size)) return FALSE;
-        for(SIZE_T j=0;j<story_checks[i].size;j++) if(actual[j]!=story_checks[i].expected[j]) return FALSE;
-    }
-    object_map_slot=(uintptr_t)image+STORY_OBJECT_MAP_RVA;
-    mono_vtable=(uintptr_t)image+STORY_MONO_VTABLE_RVA;
-    director_vtable=(uintptr_t)image+STORY_DIRECTOR_VTABLE_RVA;
-    gc_handle_table=(uintptr_t)image+STORY_GC_HANDLE_TABLE_RVA;
-    class_arena_slot=(uintptr_t)image+STORY_CLASS_ARENA_RVA;
-    graph_manager_slot=(uintptr_t)image+STORY_GRAPH_MANAGER_RVA;
+    if (!IstarothValidateChecks(image, game_build, story_profile->checks, story_profile->check_count)) return FALSE;
+    object_map_slot = (uintptr_t)image + story_profile->object_map_slot;
+    mono_vtable = (uintptr_t)image + story_profile->mono_vtable;
+    director_vtable = (uintptr_t)image + story_profile->director_vtable;
+    gc_handle_table = (uintptr_t)image + story_profile->gc_handle_table;
+    class_arena_slot = (uintptr_t)image + story_profile->class_arena_slot;
+    graph_manager_slot = (uintptr_t)image + story_profile->graph_manager_slot;
+    class_name_offset = story_profile->class_name_offset;
+    object_index_hint = story_profile->object_index_hint;
     return TRUE;
 #endif
 }
@@ -788,14 +793,16 @@ static DWORD WINAPI worker(void *unused) {
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,void *reserved) {
     (void)reserved;
     if(reason==DLL_PROCESS_ATTACH) {
+#ifdef GST_STORY_TEST
         wchar_t path[MAX_PATH]; DWORD length=GetModuleFileNameW(NULL,path,MAX_PATH);
         if(!length || length>=MAX_PATH) return FALSE;
         const wchar_t *name=path;
         for(DWORD i=0;i<length;i++) if(path[i]==L'\\') name=path+i+1;
-#ifdef GST_STORY_TEST
         if(lstrcmpiW(name,L"gst-story-test.exe")) return FALSE;
 #else
-        if(lstrcmpiW(name,L"YuanShen.exe")) return FALSE;
+        game_build = IstarothCurrentBuild();
+        if (!game_build) return FALSE;
+        story_profile = game_build->overseas ? &os_story_profile : &cn_story_profile;
 #endif
         module=instance; DisableThreadLibraryCalls(instance);
         HANDLE thread=CreateThread(NULL,0,worker,NULL,0,NULL);

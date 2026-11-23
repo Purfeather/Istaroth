@@ -12,6 +12,7 @@ static DWORD stub_pid=0;
 static HANDLE stub_event=nullptr,runtime_map=nullptr;
 static unsigned generation=0,enumeration=0,loads=0,foreign_access=0;
 static std::wstring fixture_path,mode;
+static const wchar_t* fixture_name=nullptr;
 static std::atomic<bool> live_exited=false;
 static bool close_sent=false;
 static HANDLE pending_event=nullptr;
@@ -74,13 +75,13 @@ static BOOL WINAPI FakeFirst(HANDLE,PROCESSENTRY32W* entry){enumeration=0;wcscpy
 static DWORD WINAPI CancelLater(void*){Sleep(70);PostMessageW(progress,WM_CLOSE,0,0);return 0;}
 static BOOL WINAPI FakeNext(HANDLE,PROCESSENTRY32W* entry) {
     if(mode==L"dead-listed"&&enumeration<2) {
-        wcscpy_s(entry->szExeFile,TargetName);entry->th32ProcessID=enumeration++?GetCurrentProcessId():stub_pid;return TRUE;
+        wcscpy_s(entry->szExeFile,fixture_name);entry->th32ProcessID=enumeration++?GetCurrentProcessId():stub_pid;return TRUE;
     }
     if(enumeration++||mode==L"cancel"&&generation) {
         if(mode==L"cancel"&&generation&&!close_sent){close_sent=true;HANDLE thread=CreateThread(nullptr,0,CancelLater,nullptr,0,nullptr);CloseHandle(thread);}
         SetLastError(ERROR_NO_MORE_FILES);return FALSE;
     }
-    wcscpy_s(entry->szExeFile,TargetName);
+    wcscpy_s(entry->szExeFile,fixture_name);
     entry->th32ProcessID=generation||mode==L"loaded"||mode==L"module-absent"?GetCurrentProcessId():stub_pid;return TRUE;
 }
 static HANDLE WINAPI FakeOpen(DWORD access,BOOL inherit,DWORD pid) {
@@ -109,7 +110,7 @@ static BOOL WINAPI FakePath(HANDLE,DWORD,LPWSTR path,PDWORD size){wcscpy_s(path,
 static BOOL WINAPI FakeRead(HANDLE file,LPVOID data,DWORD size,LPDWORD count,LPOVERLAPPED overlapped) {
     BOOL result=ReadFile(file,data,size,count,overlapped);
     wchar_t path[32768];DWORD length=GetFinalPathNameByHandleW(file,path,32768,FILE_NAME_NORMALIZED);
-    if(length&&wcsstr(path,TargetName)) {
+    if(length&&wcsstr(path,fixture_name)) {
         if(!generation&&mode!=L"loaded"&&mode!=L"module-absent")SetEvent(stub_event);
         if(generation&&mode==L"repeat")live_exited=true;
     }
@@ -141,14 +142,18 @@ static int WINAPI Dismiss(HWND,LPCWSTR,LPCWSTR,UINT){return IDOK;}
 int wmain(int argc,wchar_t** argv) {
     mode=argc>1?argv[1]:L"handover";stub_pid=GetCurrentProcessId()|0x40000000u;
     stub_event=CreateEventW(nullptr,TRUE,mode==L"dead-listed",nullptr);wchar_t own[32768];GetModuleFileNameW(nullptr,own,32768);
-    std::wstring folder=own;folder.resize(folder.find_last_of(L'\\')+1);fixture_path=folder+TargetName;
+    const bool os = mode == L"os-handover" || mode == L"os-wrong-hash";
+    fixture_name = GameTargets[os ? 1 : 0].name;
+    std::wstring folder=own;folder.resize(folder.find_last_of(L'\\')+1);
+    fixture_path = folder + (mode == L"os-wrong-hash" ? L"mismatched\\" : L"") + fixture_name;
     DeleteFileW((folder+L"Istaroth.ini").c_str());
     DWORD result=(DWORD)LoaderEntryUnderTest(GetModuleHandleW(nullptr),nullptr,nullptr,SW_HIDE);
     bool pass=foreign_access==0;
 #ifdef BASELINE
     pass=pass&&result==ERROR_MOD_NOT_FOUND&&!load_started&&loads==0&&child_exit==0xc000042c;
 #else
-    if(mode==L"handover")pass=pass&&result==0&&loads==1&&runtime_ready&&handover_count==1&&handover_pid==stub_pid&&handover_exit==0xc000042c&&ConfiguredGamePath()==fixture_path;
+    if (mode==L"os-wrong-hash") pass=pass&&result==ERROR_REVISION_MISMATCH&&loads==0&&!load_started&&!runtime_ready&&ConfiguredGamePath().empty();
+    else if(mode==L"handover"||mode==L"os-handover")pass=pass&&result==0&&loads==1&&runtime_ready&&handover_count==1&&handover_pid==stub_pid&&handover_exit==0xc000042c&&ConfiguredGamePath()==fixture_path;
     else if(mode==L"dead-listed")pass=pass&&result==0&&loads==1&&runtime_ready&&!handover_count&&ConfiguredGamePath()==fixture_path;
     else if(mode==L"loaded")pass=pass&&result==ERROR_PROCESS_ABORTED&&loads==1&&load_started&&!handover_count;
     else if(mode==L"crash")pass=pass&&result==ERROR_PROCESS_ABORTED&&loads==0&&!handover_count;
