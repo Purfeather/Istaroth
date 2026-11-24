@@ -9,6 +9,7 @@
 #include <cstdio>
 static unsigned checks=0,process_starts=0,terminations=0,thread_starts=0;
 static std::vector<DWORD> targets;
+static std::vector<const wchar_t*> target_names;
 static size_t target_index=0;
 static DWORD open_error=0,main_thread=0;
 static std::wstring observed_path,command_line=L"OwnedLoader.exe";
@@ -39,7 +40,8 @@ static HANDLE WINAPI FakeSnapshot(DWORD,DWORD) {
 static BOOL WINAPI FakeFirst(HANDLE,PROCESSENTRY32W* entry){target_index=0;wcscpy_s(entry->szExeFile,L"other.exe");return TRUE;}
 static BOOL WINAPI FakeNext(HANDLE,PROCESSENTRY32W* entry) {
     if(target_index==targets.size()){SetLastError(ERROR_NO_MORE_FILES);return FALSE;}
-    wcscpy_s(entry->szExeFile,L"YuanShen.exe");entry->th32ProcessID=targets[target_index++];return TRUE;
+    const auto* name = target_index < target_names.size() ? target_names[target_index] : L"YuanShen.exe";
+    wcscpy_s(entry->szExeFile,name);entry->th32ProcessID=targets[target_index++];return TRUE;
 }
 static HANDLE WINAPI FakeOpenProcess(DWORD access,BOOL inherit,DWORD pid) {
     if(open_error){SetLastError(open_error);return nullptr;}
@@ -104,7 +106,7 @@ static void Write(const std::wstring& path,const std::string& body) {
     HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);Check(file!=INVALID_HANDLE_VALUE);
     DWORD written=0;Check(WriteFile(file,body.data(),(DWORD)body.size(),&written,nullptr)&&written==body.size());CloseHandle(file);
 }
-static void Reset(){cancel_requested=false;path_discovered=false;load_started=false;quiet=false;targets.clear();open_error=0;observed_path.clear();}
+static void Reset(){cancel_requested=false;path_discovered=false;load_started=false;quiet=false;targets.clear();target_names.clear();open_error=0;observed_path.clear();}
 template<class Action>static void CancelSoon(Action action) {
     HANDLE closer=CreateThread(nullptr,0,CloseLater,nullptr,0,nullptr);Check(closer!=nullptr);Expect(ERROR_CANCELLED,action);
     WaitForSingleObject(closer,1000);CloseHandle(closer);
@@ -113,8 +115,12 @@ int wmain() {
     main_thread=GetCurrentThreadId();wchar_t own[32768];GetModuleFileNameW(nullptr,own,32768);
     directory=own;directory.resize(directory.find_last_of(L'\\')+1);std::wstring entry_dir=directory;directory+=L"cases\\";
     Check(CreateDirectoryW(directory.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS);
-    std::wstring ini=directory+L"Istaroth.ini",game=directory+TargetName,wrong=directory+L"launcher.exe";
-    Write(game,std::string(8*1024*1024,'x'));Write(wrong,"not a game");
+    const auto* cn_target = GameTarget(L"YuanShen.exe");
+    const auto* os_target = GameTarget(L"GenshinImpact.exe");
+    Check(cn_target && os_target && strcmp(cn_target->sha256, os_target->sha256) != 0);
+    std::wstring ini=directory+L"Istaroth.ini",game=directory+cn_target->name,wrong=directory+L"launcher.exe";
+    const std::wstring os_game = directory + os_target->name;
+    Write(game,std::string(8*1024*1024,'x'));Write(wrong,"not a game");Write(os_game,"owned OS config");
     progress=CreateInjectorWindow(GetModuleHandleW(nullptr),Window);close_window=progress;
     Check(progress!=nullptr);Check((GetWindowLongPtrW(progress,GWL_STYLE)&WS_SYSMENU)!=0);
     MONITORINFO screen{sizeof(screen)};RECT placed{};
@@ -158,6 +164,14 @@ int wmain() {
     DeleteFileW(ini.c_str());Check(ConfiguredGamePath().empty());Write(ini,"[Istaroth]\r\nGamePath=\r\n");Check(ConfiguredGamePath().empty());
     Reset();Check(FindGamePid()==0);std::wstring detected;CancelSoon([&]{WaitForGame(detected);});Check(!path_discovered&&game_pid==0);
     Reset();targets={GetCurrentProcessId(),12345};Expect(ERROR_DUP_NAME,[]{FindGamePid();});
+    target_names={os_target->name,cn_target->name};
+    Expect(ERROR_DUP_NAME,[]{FindGamePid();});
+    Check(FindGamePid(os_target)==GetCurrentProcessId());
+    Check(FindGamePid(cn_target)==12345);
+    Reset();targets={GetCurrentProcessId()};target_names={os_target->name};observed_path=os_game;
+    HANDLE os_process=WaitForGame(detected);
+    Check(os_process&&detected==os_game&&path_discovered);
+    CloseHandle(os_process);SaveGamePath(detected);Check(ConfiguredGamePath()==os_game);
     Reset();targets={GetCurrentProcessId()};open_error=ERROR_ACCESS_DENIED;Expect(ERROR_ACCESS_DENIED,[&]{WaitForGame(detected);});
     Reset();targets={GetCurrentProcessId()};open_error=ERROR_INVALID_PARAMETER;CancelSoon([&]{WaitForGame(detected);});
     Reset();targets={GetCurrentProcessId()};observed_path=wrong;Expect(ERROR_INVALID_NAME,[&]{WaitForGame(detected);});
@@ -165,7 +179,7 @@ int wmain() {
     Check(found&&GetProcessId(found)==GetCurrentProcessId()&&detected==game&&path_discovered&&game_pid==GetCurrentProcessId());CloseHandle(found);
     SaveGamePath(detected);Reset();Check(ConfiguredGamePath()==game);
     std::wstring unicode_dir=directory+L"\u8def\u5f84 \U0001f31f\\";Check(CreateDirectoryW(unicode_dir.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS);
-    std::wstring unicode_game=unicode_dir+TargetName;Write(unicode_game,"Unicode path");DeleteFileW(ini.c_str());path_discovered=true;SaveGamePath(unicode_game);Check(ConfiguredGamePath()==unicode_game);
+    std::wstring unicode_game=unicode_dir+cn_target->name;Write(unicode_game,"Unicode path");DeleteFileW(ini.c_str());path_discovered=true;SaveGamePath(unicode_game);Check(ConfiguredGamePath()==unicode_game);
     FileHasher verifier;
     auto digest=[&](const std::wstring& path) {
         std::string result;

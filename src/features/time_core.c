@@ -20,6 +20,10 @@ _Static_assert(sizeof(Shared) == 104, "Shared ABI");
 
 static HMODULE module;
 static BYTE *image;
+#ifndef GST_SELF_TEST
+static const IstarothGameBuild *game_build;
+static const TimeProfile *time_profile;
+#endif
 static Shared *state;
 static volatile float *owned;
 static float original, applied;
@@ -65,7 +69,7 @@ static volatile float *field(void) {
 #ifdef GST_SELF_TEST
     return range_ok((const void *)test_field, sizeof(float), TRUE) ? test_field : NULL;
 #else
-    uintptr_t *slot = (uintptr_t *)(image + GST_SLOT_RVA);
+    uintptr_t *slot = (uintptr_t *)(image + time_profile->slot_rva);
     if (!range_ok(slot, sizeof(*slot), FALSE)) return NULL;
     uintptr_t manager;
     if (!copy_checked(&manager, slot, sizeof(manager))) return NULL;
@@ -139,19 +143,7 @@ static BOOL check_profile(void) {
     test_clocks = (volatile double *)GetProcAddress((HMODULE)image, "GSTTestClocks");
     return test_field && test_clocks;
 #else
-    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)image;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 64 || dos->e_lfanew > 4096) return FALSE;
-    IMAGE_NT_HEADERS64 *pe = (IMAGE_NT_HEADERS64 *)(image + dos->e_lfanew);
-    if (pe->Signature != IMAGE_NT_SIGNATURE || pe->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
-        pe->OptionalHeader.SizeOfImage != GST_IMAGE_SIZE) return FALSE;
-    for (SIZE_T i = 0; i < sizeof(gst_checks) / sizeof(gst_checks[0]); i++) {
-        const GSTCheck *check = &gst_checks[i];
-        BYTE actual[64];
-        if (!range_ok(image + check->rva, check->size, FALSE) ||
-            !copy_checked(actual, image + check->rva, check->size)) return FALSE;
-        for (SIZE_T j = 0; j < check->size; j++) if (actual[j] != check->bytes[j]) return FALSE;
-    }
-    return TRUE;
+    return IstarothValidateChecks(image, game_build, time_profile->checks, time_profile->check_count);
 #endif
 }
 
@@ -258,15 +250,17 @@ static DWORD WINAPI worker(void *unused) {
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved) {
     (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
+#ifdef GST_SELF_TEST
         wchar_t path[MAX_PATH];
         DWORD length = GetModuleFileNameW(NULL, path, MAX_PATH);
         if (!length || length >= MAX_PATH) return FALSE;
         const wchar_t *name = path;
         for (DWORD i = 0; i < length; i++) if (path[i] == L'\\') name = path + i + 1;
-#ifdef GST_SELF_TEST
         if (lstrcmpiW(name, L"gst-time-test.exe")) return FALSE;
 #else
-        if (lstrcmpiW(name, L"YuanShen.exe")) return FALSE;
+        game_build = IstarothCurrentBuild();
+        if (!game_build) return FALSE;
+        time_profile = game_build->overseas ? &os_time_profile : &cn_time_profile;
 #endif
         module = instance;
         DisableThreadLibraryCalls(instance);

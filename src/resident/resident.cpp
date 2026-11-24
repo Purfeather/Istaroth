@@ -7,6 +7,9 @@
 #include "diagnostics.h"
 #include "file_integrity.h"
 #include "verified_peers.h"
+#ifndef ISTAROTH_FIXTURE
+#include "game_build.h"
+#endif
 
 namespace istaroth {
 HMODULE ResidentModule=nullptr;
@@ -203,7 +206,8 @@ static DWORD WINAPI Run(void*) {
 #endif
     }
     HANDLE clock_handle=nullptr,action_handle=nullptr,story_handle=nullptr;
-    BYTE* story_map=nullptr;bool peers_loaded=false,renderer_attempted=false,initialized=false;
+    BYTE* story_map=nullptr;
+    bool story_loaded=false,actions_loaded=false,renderer_attempted=false,initialized=false;
     ClockShared last_clock{};ActionShared last_action{};bool have_clock_snapshot=false,have_action_snapshot=false;
     uint64_t started=GetTickCount64(),window_check=0,last_diagnostic=0;LONG saved_revision=0;bool f10_down=false,insert_down=false;
     UiPhase previous=UiPhase::Starting;
@@ -215,16 +219,8 @@ static DWORD WINAPI Run(void*) {
         insert_down=insert;
         if(now-window_check>=250) {unsigned found=0;GameWindow=nullptr;EnumWindows(FindWindow,(LPARAM)&found);if(found!=1)GameWindow=nullptr;window_check=now;}
         if(!clock_map&&!external_error)clock_map=(ClockShared*)OpenMap(L"Local\\GenshinSkip.Time.",104,FILE_MAP_ALL_ACCESS,clock_handle);
-        if(clock_map&&!peers_loaded) {
-            SendClock(false,1);peers_loaded=true;
-#ifndef ISTAROTH_FIXTURE
-            DWORD error = LoadPeer(StoryPeer);
-            if (!error) error = LoadPeer(ActionPeer);
-            if (error) SetRuntimeError(error,"dialogue component load failed");
-#endif
-        }
-        if(peers_loaded&&!action_map&&!external_error)action_map=(ActionShared*)OpenMap(L"Local\\Istaroth.DialogueActions.",336,FILE_MAP_ALL_ACCESS,action_handle);
-        if(peers_loaded&&!story_map&&!external_error)story_map=(BYTE*)OpenMap(L"Local\\GenshinSkip.Story.",19904,FILE_MAP_READ,story_handle);
+        if(actions_loaded&&!action_map&&!external_error)action_map=(ActionShared*)OpenMap(L"Local\\Istaroth.DialogueActions.",336,FILE_MAP_ALL_ACCESS,action_handle);
+        if(story_loaded&&!story_map&&!external_error)story_map=(BYTE*)OpenMap(L"Local\\GenshinSkip.Story.",19904,FILE_MAP_READ,story_handle);
         ClockShared c{};ActionShared a{};
         bool clock_read=ReadSnapshot(clock_map,c,offsetof(ClockShared,sequence));
         bool action_read=ReadSnapshot(action_map,a,offsetof(ActionShared,sequence));
@@ -234,9 +230,33 @@ static DWORD WINAPI Run(void*) {
         else if(have_clock_snapshot){c=last_clock;clock_read=true;}
         if(action_read){last_action=a;have_action_snapshot=true;}
         else if(have_action_snapshot){a=last_action;action_read=true;}
-        bool components=clock_read&&action_read&&story_map&&c.magic==0x47535431&&c.version==1&&c.pid==GetCurrentProcessId()&&
-            a.magic==0x49534131&&a.version==4&&a.pid==GetCurrentProcessId()&&a.status!=0&&
-            *(DWORD*)story_map==0x47535331&&*(DWORD*)(story_map+4)==7&&*(DWORD*)(story_map+8)==GetCurrentProcessId();
+        const DWORD pid = GetCurrentProcessId();
+        const bool clock_ready = clock_read && c.magic == 0x47535431 && c.version == 1 && c.pid == pid;
+        if (!story_loaded && !external_error && clock_ready && c.heartbeat && c.status <= 2) {
+            SendClock(false, 1);
+#ifdef ISTAROTH_FIXTURE
+            story_loaded = actions_loaded = true;
+#else
+            if (const DWORD error = LoadPeer(StoryPeer)) SetRuntimeError(error, "story component load failed");
+            else story_loaded = true;
+#endif
+        }
+        const auto story_header = reinterpret_cast<const volatile DWORD*>(story_map);
+        const bool story_ready = story_header && story_header[0] == 0x47535331 &&
+                                 story_header[1] == 7 && story_header[2] == pid;
+#ifndef ISTAROTH_FIXTURE
+        if (story_ready && !external_error) {
+            const DWORD status = story_header[3];
+            if (status == 3 || status == 7) {
+                SetRuntimeError(status == 3 ? ERROR_REVISION_MISMATCH : ERROR_INVALID_STATE, "story component stopped");
+            } else if (!actions_loaded && status == 2 && GameWindow) {
+                if (const DWORD error = LoadPeer(ActionPeer)) SetRuntimeError(error, "dialogue component load failed");
+                else actions_loaded = true;
+            }
+        }
+#endif
+        bool components=clock_ready&&action_read&&story_ready&&
+            a.magic==0x49534131&&a.version==4&&a.pid==pid&&a.status!=0;
         if(components&&GameWindow&&!renderer_attempted&&!external_error) {
             TraceRuntime("native components responded; installing renderer");
             renderer_attempted=true;if(!InstallRenderer())SetRuntimeError(GetLastError(),"DX11 renderer setup failed");
@@ -282,12 +302,12 @@ static DWORD WINAPI Run(void*) {
 }
 }
 static __declspec(noinline) BOOL AttachResident(HINSTANCE module) {
+#ifdef ISTAROTH_FIXTURE
         wchar_t path[512];DWORD length=GetModuleFileNameW(nullptr,path,512);if(!length||length>=512)return FALSE;
         const wchar_t* name=wcsrchr(path,L'\\');name=name?name+1:path;
-#ifdef ISTAROTH_FIXTURE
         if(lstrcmpiW(name,L"gst-time-test.exe"))return FALSE;
 #else
-        if(lstrcmpiW(name,L"YuanShen.exe"))return FALSE;
+        if (!IstarothCurrentBuild()) return FALSE;
 #endif
         istaroth::ResidentModule=module;
         HANDLE worker=CreateThread(nullptr,0,istaroth::Run,nullptr,0,nullptr);if(!worker)return FALSE;CloseHandle(worker);

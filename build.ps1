@@ -104,7 +104,11 @@ try {
     CompileCpp 'Istaroth.dll' (@('/LD','src/resident/resident.cpp','src/resident/resident_renderer.cpp') + $slimFlags + $uiSources + @('/link','/INCREMENTAL:NO',$detours) + $uiLibraries + @('bcrypt.lib'))
     $profile = Get-Content 'profiles/compatibility.json' -Raw | ConvertFrom-Json
     $payloadNames = @('Istaroth.dll','time_core.dll','story_probe.dll','dialogue_actions.dll')
-    $header = @('#pragma once','struct Payload { const wchar_t* name; const char* sha256; };',('static const wchar_t* TargetName=L"' + $profile.executable + '";'),('static const char* TargetSha256="' + $profile.sha256 + '";'),'static const wchar_t* ResidentPayload=L"Istaroth.dll";','static const Payload Payloads[]={')
+    $header = @('#pragma once','struct Payload { const wchar_t* name; const char* sha256; };','static const Payload GameTargets[]={')
+    foreach ($build in $profile.builds) {
+        $header += ('{{L"{0}", "{1}"}},' -f $build.executable,$build.sha256)
+    }
+    $header += @('};','static const wchar_t* ResidentPayload=L"Istaroth.dll";','static const Payload Payloads[]={')
     foreach ($name in $payloadNames) { $hash=(Get-FileHash "$out/$name").Hash.ToLowerInvariant(); $header += '{L"' + $name + '","' + $hash + '"},' }; $header += '};'
     [IO.File]::WriteAllLines("$out/resident_payloads.h",$header)
     Run 'rc.exe' @('/nologo',('/i' + "$root/assets"),('/fo' + "$out/injector.res"),'src/loader/injector.rc')

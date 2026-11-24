@@ -29,7 +29,11 @@ struct Shared {
 };
 static_assert(sizeof(Shared)==336&&offsetof(Shared,sequence)==56&&offsetof(Shared,text)==184,"Dialogue actions ABI");
 struct Root {uintptr_t native,managed,go;DWORD id;};
+#ifndef ISTAROTH_ACTIONS_TEST
 static HMODULE own_module;
+static const IstarothGameBuild *game_build;
+#endif
+static const DialogueActionsProfile *action_profile = &cn_action_profile;
 static BYTE *image,*story;
 static Shared state,*shared;
 static volatile LONG running,window_thread;
@@ -56,10 +60,16 @@ extern "C" {
     void *istaroth_outer_b_original=nullptr,*istaroth_outer_b_next=nullptr;
     void IstarothOuterA();
     void IstarothOuterB();
+    void IstarothOsOuterA();
+    void IstarothOsOuterB();
     DWORD IstarothOuterFixtureA(float,float,uintptr_t);
     DWORD IstarothOuterFixtureB(float,float,uintptr_t);
     void IstarothOuterCompareA();void IstarothOuterNextA();
     void IstarothOuterCompareB();void IstarothOuterNextB();
+    DWORD IstarothOsOuterFixtureA(float,float,uintptr_t);
+    DWORD IstarothOsOuterFixtureB(float,float,uintptr_t);
+    void IstarothOsOuterCompareA();void IstarothOsOuterNextA();
+    void IstarothOsOuterCompareB();void IstarothOsOuterNextB();
     void IstarothCooldownGate();
     DWORD IstarothCooldownFixture(float,float,uintptr_t);
     void IstarothFixtureJump();
@@ -81,15 +91,17 @@ static bool bytes(void *to,uintptr_t at,SIZE_T size) {
 static uintptr_t pointer(uintptr_t at) {uintptr_t value=0;return bytes(&value,at,8)?value:0;}
 static DWORD u32(uintptr_t at) {DWORD value=0xffffffff;bytes(&value,at,4);return value;}
 static bool one(uintptr_t at) {BYTE value=0;return bytes(&value,at,1)&&value==1;}
+static bool overseas() { return action_profile->overseas; }
+
 static bool named_class(uintptr_t klass,const char *wanted) {
     char name[64]={};
-    return bytes(name,pointer(klass+0x70),sizeof(name))&&memchr(name,0,sizeof(name))&&!strcmp(name,wanted);
+    return bytes(name,pointer(klass+action_profile->class_name_offset),sizeof(name))&&memchr(name,0,sizeof(name))&&!strcmp(name,wanted);
 }
 static bool named(uintptr_t object,const char *wanted) {return named_class(pointer(object),wanted);}
 static bool active_go(uintptr_t go) {return go&&one(go+0x1f8);}
 static bool component(uintptr_t object,uintptr_t *go=nullptr) {
     uintptr_t native=pointer(object+16),owner=pointer(native+0x40);
-    if(!native||pointer(native)!=(uintptr_t)image+MONO_VTABLE_RVA||u32(native+0x20)!=2||
+    if(!native||pointer(native)!=(uintptr_t)image+action_profile->mono_vtable||u32(native+0x20)!=2||
         pointer(native+0x28)!=object||!active_go(owner))return false;
     if(go)*go=owner;
     return true;
@@ -136,7 +148,7 @@ static istaroth::ContinueObservation find_continue(istaroth::ContinueKey *key,ui
         BYTE prefix[80]={},flags[3]={};uintptr_t owner=0;
         if(origin||!candidate.Valid()||!named(candidate.managed,"MonoClickContinue")||
            pointer(candidate.managed+16)!=candidate.native||!bytes(prefix,candidate.native,sizeof(prefix))||
-           pointer(candidate.native)!=(uintptr_t)image+MONO_VTABLE_RVA||u32(candidate.native+8)!=candidate.instance||
+           pointer(candidate.native)!=(uintptr_t)image+action_profile->mono_vtable||u32(candidate.native+8)!=candidate.instance||
            u32(candidate.native+0x20)!=2||pointer(candidate.native+0x28)!=candidate.managed) {invalid=true;continue;}
         memcpy(&owner,prefix+0x40,8);
         if(!bytes(flags,owner+0x1f6,3)||flags[2]>1||prefix[0x48]>1) {invalid=true;continue;}
@@ -146,16 +158,61 @@ static istaroth::ContinueObservation find_continue(istaroth::ContinueKey *key,ui
     }
     return !invalid&&found==1?istaroth::ContinueObservation::Waiting:istaroth::ContinueObservation::Unknown;
 }
+static uintptr_t current_action(uintptr_t context) {
+    return pointer(context + (overseas() ? 0x240 : 0x248));
+}
+
+static uintptr_t verified_method(uintptr_t klass, uintptr_t rva, DWORD cn_index, WORD cn_count, bool os) {
+    struct MethodLayout { DWORD table, count, owner, entry; };
+    const MethodLayout layout = os ? MethodLayout{0x98, 0xc0, 8, 0} :
+                                            MethodLayout{0x88, 0xc2, 0, 8};
+    WORD count = 0;
+    const uintptr_t table = pointer(klass + layout.table);
+    if (!table || !bytes(&count, klass + layout.count, sizeof(count))) return 0;
+
+    auto matches = [&](uintptr_t info) {
+        BYTE parameters = 255;
+        return info && pointer(info + layout.owner) == klass &&
+               pointer(info + layout.entry) == (uintptr_t)image + rva &&
+               bytes(&parameters, info + 0x2e, 1) && parameters == 0;
+    };
+    if (!os) {
+        if (count != cn_count) return 0;
+        const uintptr_t info = pointer(table + cn_index * sizeof(uintptr_t));
+        return matches(info) ? info : 0;
+    }
+
+    // The OS build reorders managed methods. Locate the exact native entry
+    // once per class/table and revalidate the same live slot on future calls.
+    struct Cache { uintptr_t klass, table, rva; WORD slot; };
+    static Cache advance_cache{}, event_cache{};
+    Cache& cache = rva == action_profile->free_click ? advance_cache : event_cache;
+    if (!count || count > 512) return 0;
+    if (cache.klass == klass && cache.table == table && cache.rva == rva && cache.slot < count) {
+        const uintptr_t info = pointer(table + cache.slot * sizeof(uintptr_t));
+        if (matches(info)) return info;
+    }
+    for (WORD slot = 0; slot < count; ++slot) {
+        const uintptr_t info = pointer(table + slot * sizeof(uintptr_t));
+        if (matches(info)) {
+            cache = {klass, table, rva, slot};
+            return info;
+        }
+    }
+    return 0;
+}
+
 static uintptr_t advance_info(const Root &root,uintptr_t context) {
-    if(!named(context,CONTEXT_CLASS)||pointer(context+104)!=root.managed||pointer(context+632)!=root.managed)return 0;
-    uintptr_t action=pointer(context+584),model=pointer(context+536),klass=pointer(context);
-    if(!named(action,"Action")||!named(model,"MFCLKHPEEMK")||pointer(action+32)!=model||
-        pointer(action+16)!=(uintptr_t)image+ADVANCE_MODEL_RVA)return 0;
-    WORD count=0;bytes(&count,klass+0xc2,2);
-    uintptr_t info=pointer(pointer(klass+0x88)+CONTEXT_METHOD_INDEX*8);BYTE parameters=255;
-    if(count!=CONTEXT_METHOD_COUNT||pointer(info)!=klass||pointer(info+8)!=(uintptr_t)image+FREE_CLICK_RVA||
-        !bytes(&parameters,info+0x2e,1)||parameters)return 0;
-    return info;
+    if (!context || pointer(context + (overseas() ? 0x220 : 0x278)) != root.managed) return 0;
+    if (!overseas() && (!named(context, CONTEXT_CLASS) || pointer(context + 0x68) != root.managed)) return 0;
+
+    const uintptr_t action = current_action(context);
+    const uintptr_t model = pointer(action + 32);
+    if (!named(action, "Action") || !model ||
+        pointer(action + 16) != (uintptr_t)image + action_profile->advance_model) return 0;
+    if (!overseas() && (!named(model, "MFCLKHPEEMK") || pointer(context + 0x218) != model)) return 0;
+
+    return verified_method(pointer(context), action_profile->free_click, CONTEXT_METHOD_INDEX, CONTEXT_METHOD_COUNT, overseas());
 }
 static uintptr_t button_context(const Root &root,uintptr_t button) {
     if(!named(button,"Button")&&!named(button,"MihoyoButton"))return 0;
@@ -165,7 +222,8 @@ static uintptr_t button_context(const Root &root,uintptr_t button) {
     if(!named(calls,"InvokableCallList")||!named(list,"List`1")||u32(list+24)!=1||pointer(array+24)<1)return 0;
     uintptr_t invokable=pointer(array+32),delegate=pointer(invokable+16),closure=pointer(delegate+32);
     if(!named(invokable,"InvokableCall")||!named(delegate,"UnityAction")||
-        pointer(delegate+16)!=(uintptr_t)image+CLICK_CLOSURE_RVA||!named(closure,CLICK_CLOSURE_CLASS))return 0;
+        pointer(delegate+16)!=(uintptr_t)image+action_profile->click_closure||!closure)return 0;
+    if(!overseas()&&!named(closure,CLICK_CLOSURE_CLASS))return 0;
     uintptr_t inner=pointer(closure+16),context=pointer(inner+32);
     return named(inner,"UnityAction")&&advance_info(root,context)?context:0;
 }
@@ -176,12 +234,12 @@ static uintptr_t find_context(const Root &root) {
     queue[0]={pointer(pointer(root.go+0x40)+8),0};
     while(index<count) {
         Node node=queue[index++];uintptr_t transform=node.transform;
-        if(pointer(transform)!=(uintptr_t)image+RECT_VTABLE_RVA)continue;
+        if(pointer(transform)!=(uintptr_t)image+action_profile->rect_vtable)continue;
         uintptr_t go=pointer(transform+0x40),components=pointer(go+0x40);DWORD size=u32(go+0x48);
         if(!components||size>32)continue;
         for(DWORD i=0;i<size;i++) {
             uintptr_t native=pointer(components+i*16+8);
-            if(pointer(native)!=(uintptr_t)image+MONO_VTABLE_RVA||u32(native+0x20)!=2||pointer(native+0x40)!=go)continue;
+            if(pointer(native)!=(uintptr_t)image+action_profile->mono_vtable||u32(native+0x20)!=2||pointer(native+0x40)!=go)continue;
             uintptr_t object=pointer(native+0x28);
             if(pointer(object+16)!=native)continue;
             uintptr_t context=button_context(root,object);
@@ -212,14 +270,10 @@ static uintptr_t event_info(uintptr_t event) {
     if(!named(event,"ButtonClickedEvent"))return 0;
     uintptr_t klass=pointer(event),arena=pointer(pointer(arena_slot));
     for(DWORD depth=0;klass&&arena&&depth<4;depth++) {
-        if(named_class(klass,"UnityEvent")) {
-            WORD count=0;bytes(&count,klass+0xc2,2);
-            uintptr_t table=pointer(klass+0x88),info=pointer(table+6*8);BYTE parameters=255;
-            if(count!=7||!info||pointer(info)!=klass||pointer(info+8)!=(uintptr_t)image+EVENT_INVOKE_RVA||
-                !bytes(&parameters,info+0x2e,1)||parameters!=0)return 0;
-            return info;
+        if (named_class(klass, "UnityEvent")) {
+            return verified_method(klass, action_profile->event_invoke, 6, 7, overseas());
         }
-        DWORD relative=u32(klass+0xb0);if(!relative||relative==0xffffffff)return 0;
+        DWORD relative=u32(klass+(overseas()?0xa4:0xb0));if(!relative||relative==0xffffffff)return 0;
         uintptr_t parent=arena+relative;if(parent==klass)return 0;klass=parent;
     }
     return 0;
@@ -229,6 +283,17 @@ static void choice_text(uintptr_t item) {
     if(!named(text,"Text")||!named(value,"String"))return;
     DWORD length=u32(value+16);wchar_t buffer[64]={};
     if(length&&length<64&&bytes(buffer,value+20,length*2))WideCharToMultiByte(CP_UTF8,0,buffer,(int)length,state.text,127,nullptr,nullptr);
+}
+static bool invocation_matches(uintptr_t rva) {
+    BYTE actual[64];
+    for (SIZE_T i = 0; i < action_profile->check_count; ++i) {
+        const auto& check = action_profile->checks[i];
+        if (check.rva == rva && check.size == sizeof(actual)) {
+            return bytes(actual, (uintptr_t)image + rva, sizeof(actual)) &&
+                   memcmp(actual, check.bytes, sizeof(actual)) == 0;
+        }
+    }
+    return false;
 }
 static DWORD invoke_game(uintptr_t target,uintptr_t info,uintptr_t rva) {
     __try {((void(__fastcall*)(void*,void*))(image+rva))((void*)target,(void*)info);return 0;}
@@ -296,7 +361,7 @@ static void tick() {
     if(!state.gate_valid){clear_cooldown();state.reason=state.gate_reason;publish();return;}
     if(command.epoch!=state.gate_epoch){clear_cooldown();state.reason=19;publish();return;}
     if(state.attempts>=command.limit){clear_cooldown();state.reason=5;publish();return;}
-    uintptr_t model=pointer(context+536);
+    uintptr_t model=pointer(current_action(context)+32);
     if(istaroth_cooldown_model!=model) {
         clear_cooldown();InterlockedExchangePointer((PVOID volatile*)&istaroth_cooldown_model,(PVOID)model);
     }
@@ -313,7 +378,7 @@ static void tick() {
         // The research probe identified this reference in the real notebook.
         // The existing UnityEvent metadata/byte guards validate its invocation.
         button=pointer(continue_key.managed+72);event=pointer(button+216);
-        info=event_info(event);rva=EVENT_INVOKE_RVA;kind=3;item=0;count=0;
+        info=event_info(event);rva=action_profile->event_invoke;kind=3;item=0;count=0;
     } else if(line==1&&!options) {
 #ifdef ISTAROTH_CURTAIN_SHADOW
         clear_cooldown();state.reason=28;publish();return;
@@ -321,24 +386,23 @@ static void tick() {
         pending_choice=0;
         if(!command.advance){state.reason=6;publish();return;}
         item=0;count=0;
-        button=context;info=advance_info(root,context);event=context;rva=FREE_CLICK_RVA;kind=1;
+        button=context;info=advance_info(root,context);event=context;rva=action_profile->free_click;kind=1;
     } else {
 #ifdef ISTAROTH_CURTAIN_SHADOW
         clear_cooldown();state.reason=28;publish();return;
 #endif
         if(!command.choose){state.reason=7;publish();return;}
-        event=pointer(button+216);info=event_info(event);rva=EVENT_INVOKE_RVA;kind=2;
+        event=pointer(button+216);info=event_info(event);rva=action_profile->event_invoke;kind=2;
         key=choice_key(root,count);
         if(key&&key==pending_choice){state.reason=18;publish();return;}
     }
     if(now-state.last_tick<50){state.reason=9;publish();return;}
-    BYTE actual[64]={};
     bool valid=kind==1?advance_info(root,button)==info:component(button)&&one(button+176)&&one(button+192)&&
         (kind==3?(named(button,"Button")&&pointer(continue_key.managed+72)==button&&
                    named(continue_key.managed,"MonoClickContinue")&&component(continue_key.managed)&&
                    pointer(continue_key.managed+16)==continue_key.native&&pointer(continue_key.native+0x28)==continue_key.managed&&
                    one(continue_key.native+0x48)&&u32(continue_key.native+8)==continue_key.instance):key!=0);
-    if(!button||!valid||!info||!bytes(actual,(uintptr_t)image+rva,64)||memcmp(actual,kind==1?free_click_bytes:event_bytes,64)) {
+    if(!button||!valid||!info||!invocation_matches(rva)) {
         state.reason=8;publish();return;
     }
     BYTE current_line=255;bytes(&current_line,root.managed+256,1);
@@ -365,6 +429,7 @@ static void tick() {
     else {clear_cooldown();state.status=3;state.reason=13;}
     publish();
 }
+#ifndef ISTAROTH_ACTIONS_TEST
 static void __fastcall game_update(void *self,void *method) {
     original_update(self,method);
     if(running&&named((uintptr_t)self,"MainThreadDispatcher"))tick();
@@ -375,10 +440,10 @@ static BOOL CALLBACK find_window(HWND hwnd,LPARAM) {
     return TRUE;
 }
 static LONG attach() {
-    original_update=(Update)(image+UPDATE_RVA);
-    istaroth_cooldown_original=image+COOLDOWN_JUMP_RVA;istaroth_cooldown_next=image+COOLDOWN_JUMP_RVA+6;
-    istaroth_outer_a_original=image+OUTER_A_COMPARE_RVA;istaroth_outer_a_next=image+OUTER_A_COMPARE_RVA+9;
-    istaroth_outer_b_original=image+OUTER_B_COMPARE_RVA;istaroth_outer_b_next=image+OUTER_B_COMPARE_RVA+9;
+    original_update=(Update)(image+action_profile->update);
+    istaroth_cooldown_original=image+action_profile->cooldown_jump;istaroth_cooldown_next=image+action_profile->cooldown_jump+6;
+    istaroth_outer_a_original=image+action_profile->outer_a_compare;istaroth_outer_a_next=image+action_profile->outer_a_compare+9;
+    istaroth_outer_b_original=image+action_profile->outer_b_compare;istaroth_outer_b_next=image+action_profile->outer_b_compare+9;
     LONG error=DetourTransactionBegin();if(error)return error;
     error=DetourUpdateThread(GetCurrentThread());
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0),handles[512]={};DWORD count=0;
@@ -395,8 +460,8 @@ static LONG attach() {
     CloseHandle(snapshot);
     if(!error)error=DetourAttach((PVOID*)&original_update,game_update);
     if(!error)error=DetourAttach(&istaroth_cooldown_original,IstarothCooldownGate);
-    if(!error)error=DetourAttach(&istaroth_outer_a_original,IstarothOuterA);
-    if(!error)error=DetourAttach(&istaroth_outer_b_original,IstarothOuterB);
+    if(!error)error=DetourAttach(&istaroth_outer_a_original,overseas()?IstarothOsOuterA:IstarothOuterA);
+    if(!error)error=DetourAttach(&istaroth_outer_b_original,overseas()?IstarothOsOuterB:IstarothOuterB);
     if(error)DetourTransactionAbort();else error=DetourTransactionCommit();
     for(DWORD i=0;i<count;i++)CloseHandle(handles[i]);
     return error;
@@ -409,16 +474,9 @@ static DWORD WINAPI worker(void*) {
     if(!shared){CloseHandle(mapping);FreeLibraryAndExitThread(own_module,2);}
     state.magic=0x49534131;state.version=4;state.pid=GetCurrentProcessId();state.last_index=0xffffffff;
     publish();
-    image=(BYTE*)GetModuleHandleW(nullptr);arena_slot=(uintptr_t)image+CLASS_ARENA_RVA;
-    BYTE actual[64]={};
-    if(__readgsdword(0x48)!=GetCurrentThreadId()||
-        !bytes(actual,(uintptr_t)image+UPDATE_RVA,64)||memcmp(actual,update_bytes,64)||
-        !bytes(actual,(uintptr_t)image+EVENT_INVOKE_RVA,64)||memcmp(actual,event_bytes,64)||
-        !bytes(actual,(uintptr_t)image+FREE_CLICK_RVA,64)||memcmp(actual,free_click_bytes,64)||
-        !bytes(actual,(uintptr_t)image+COOLDOWN_JUMP_RVA,6)||memcmp(actual,cooldown_bytes,6)||
-        !bytes(actual,(uintptr_t)image+OUTER_A_COMPARE_RVA,9)||memcmp(actual,outer_a_bytes,9)||
-        !bytes(actual,(uintptr_t)image+OUTER_B_COMPARE_RVA,9)||memcmp(actual,outer_b_bytes,9)||
-        !bytes(actual,(uintptr_t)image+ADVANCE_MODEL_RVA,64)||memcmp(actual,advance_model_bytes,64)) {
+    image=(BYTE*)GetModuleHandleW(nullptr);arena_slot=(uintptr_t)image+action_profile->class_arena_slot;
+    if (__readgsdword(0x48) != GetCurrentThreadId() ||
+        !IstarothValidateChecks(image, game_build, action_profile->checks, action_profile->check_count)) {
         state.status=3;state.error=ERROR_REVISION_MISMATCH;publish();ExitThread(3);
     }
     swprintf_s(name,L"Local\\GenshinSkip.Story.%lu",GetCurrentProcessId());
@@ -439,15 +497,15 @@ static DWORD WINAPI worker(void*) {
     // Keep the inert hook, mapping and module valid until the game exits normally.
     ExitThread(0);
 }
+#endif
 BOOL WINAPI DllMain(HINSTANCE module,DWORD reason,void*) {
 #ifdef ISTAROTH_ACTIONS_TEST
     (void)module;(void)reason;return TRUE;
 #else
     if(reason==DLL_PROCESS_ATTACH) {
-        wchar_t path[MAX_PATH];DWORD length=GetModuleFileNameW(nullptr,path,MAX_PATH);const wchar_t *name=path;
-        if(!length||length>=MAX_PATH)return FALSE;
-        for(DWORD i=0;i<length;i++)if(path[i]==L'\\')name=path+i+1;
-        if(lstrcmpiW(name,L"YuanShen.exe"))return FALSE;
+        game_build = IstarothCurrentBuild();
+        if (!game_build) return FALSE;
+        action_profile = game_build->overseas ? &os_action_profile : &cn_action_profile;
         own_module=module;DisableThreadLibraryCalls(module);
         HANDLE thread=CreateThread(nullptr,0,worker,nullptr,0,nullptr);if(!thread)return FALSE;CloseHandle(thread);
     }
@@ -461,7 +519,7 @@ extern "C" __declspec(dllexport) DWORD ContinueSelfTest() {
     uintptr_t value=(uintptr_t)name;memcpy(klass+0x70,&value,8);
     value=(uintptr_t)klass;memcpy(object,&value,8);
     value=(uintptr_t)native;memcpy(object+16,&value,8);
-    value=(uintptr_t)image+MONO_VTABLE_RVA;memcpy(native,&value,8);
+    value=(uintptr_t)image+action_profile->mono_vtable;memcpy(native,&value,8);
     DWORD id=42,kind=2;memcpy(native+8,&id,4);memcpy(native+0x20,&kind,4);
     value=(uintptr_t)object;memcpy(native+0x28,&value,8);
     value=(uintptr_t)go;memcpy(native+0x40,&value,8);native[0x48]=go[0x1f8]=1;
@@ -519,7 +577,38 @@ extern "C" __declspec(dllexport) DWORD OuterWaitSelfTest() {
         (void*)IstarothOuterCompareA,(void*)IstarothOuterNextA,IstarothOuterFixtureA);
     bool b=outer_fixture(&istaroth_outer_b_original,&istaroth_outer_b_next,(void*)IstarothOuterB,
         (void*)IstarothOuterCompareB,(void*)IstarothOuterNextB,IstarothOuterFixtureB);
-    return a&&b?3:0;
+    const bool os_a = outer_fixture(&istaroth_outer_a_original, &istaroth_outer_a_next,
+        (void*)IstarothOsOuterA, (void*)IstarothOsOuterCompareA, (void*)IstarothOsOuterNextA, IstarothOsOuterFixtureA);
+    const bool os_b = outer_fixture(&istaroth_outer_b_original, &istaroth_outer_b_next,
+        (void*)IstarothOsOuterB, (void*)IstarothOsOuterCompareB, (void*)IstarothOsOuterNextB, IstarothOsOuterFixtureB);
+    return (a ? 1u : 0u) | (b ? 2u : 0u) | (os_a ? 4u : 0u) | (os_b ? 8u : 0u);
+}
+extern "C" __declspec(dllexport) DWORD OverseasMethodSelfTest() {
+    alignas(uintptr_t) BYTE klass_data[0xc8] = {}, info_data[0x38] = {};
+    const uintptr_t klass = (uintptr_t)klass_data;
+    const uintptr_t info = (uintptr_t)info_data;
+    uintptr_t methods[3] = {0, info, 0};
+    const uintptr_t table = (uintptr_t)methods;
+    const WORD count = ARRAYSIZE(methods);
+    image = (BYTE*)0x100000;
+    const uintptr_t entry = (uintptr_t)image + action_profile->event_invoke;
+    memcpy(klass_data + 0x98, &table, sizeof(table));
+    memcpy(klass_data + 0xc0, &count, sizeof(count));
+    memcpy(info_data, &entry, sizeof(entry));
+    memcpy(info_data + 8, &klass, sizeof(klass));
+
+    DWORD result = 0;
+    auto lookup = [&] { return verified_method(klass, action_profile->event_invoke, 6, 7, true); };
+    if (lookup() == info) result |= 1;
+    methods[1] = 0;
+    methods[2] = info;
+    if (lookup() == info) result |= 2;
+    info_data[0x2e] = 1;
+    if (!lookup()) result |= 4;
+    info_data[0x2e] = 0;
+    memset(info_data + 8, 0, sizeof(klass));
+    if (!lookup()) result |= 8;
+    return result;
 }
 extern "C" __declspec(dllexport) DWORD CooldownSelfTest() {
     istaroth_cooldown_original=(void*)IstarothFixtureJump;istaroth_cooldown_next=(void*)IstarothFixtureNext;
@@ -577,7 +666,7 @@ extern "C" __declspec(dllexport) DWORD ActionsSelfTest() {
     uintptr_t value=(uintptr_t)class_text;memcpy(klass+0x70,&value,8);
     value=(uintptr_t)klass;memcpy(object,&value,8);
     value=(uintptr_t)native;memcpy(object+16,&value,8);
-    value=(uintptr_t)image+MONO_VTABLE_RVA;memcpy(native,&value,8);
+    value=(uintptr_t)image+action_profile->mono_vtable;memcpy(native,&value,8);
     DWORD id=42,kind=2;memcpy(native+8,&id,4);memcpy(native+0x20,&kind,4);
     value=(uintptr_t)object;memcpy(native+0x28,&value,8);
     value=(uintptr_t)go;memcpy(native+0x40,&value,8);go[0x1f8]=1;
@@ -596,7 +685,7 @@ extern "C" __declspec(dllexport) DWORD ActionsSelfTest() {
     uintptr_t arena=(uintptr_t)classes,slot=(uintptr_t)&arena;arena_slot=(uintptr_t)&slot;
     value=(uintptr_t)table;memcpy(classes+512+0x88,&value,8);WORD count=7;memcpy(classes+512+0xc2,&count,2);
     table[6]=(uintptr_t)info;value=(uintptr_t)classes+512;memcpy(info,&value,8);
-    value=(uintptr_t)image+EVENT_INVOKE_RVA;memcpy(info+8,&value,8);
+    value=(uintptr_t)image+action_profile->event_invoke;memcpy(info+8,&value,8);
     if(event_info((uintptr_t)event)==(uintptr_t)info)flags|=16;
     info[0x2e]=1;if(!event_info((uintptr_t)event))flags|=32;info[0x2e]=0;
     value++;memcpy(info+8,&value,8);if(!event_info((uintptr_t)event))flags|=64;
@@ -616,10 +705,10 @@ extern "C" __declspec(dllexport) DWORD ActionsSelfTest() {
     value=(uintptr_t)action_name;memcpy(action_class+0x70,&value,8);value=(uintptr_t)action_class;memcpy(action,&value,8);
     value=(uintptr_t)object;memcpy(context+104,&value,8);memcpy(context+632,&value,8);
     value=(uintptr_t)model;memcpy(context+536,&value,8);memcpy(action+32,&value,8);
-    value=(uintptr_t)action;memcpy(context+584,&value,8);value=(uintptr_t)image+ADVANCE_MODEL_RVA;memcpy(action+16,&value,8);
+    value=(uintptr_t)action;memcpy(context+584,&value,8);value=(uintptr_t)image+action_profile->advance_model;memcpy(action+16,&value,8);
     uint64_t context_methods[CONTEXT_METHOD_COUNT]={};context_methods[CONTEXT_METHOD_INDEX]=(uintptr_t)info;
     value=(uintptr_t)context_methods;memcpy(context_class+0x88,&value,8);count=CONTEXT_METHOD_COUNT;memcpy(context_class+0xc2,&count,2);
-    value=(uintptr_t)context_class;memcpy(info,&value,8);value=(uintptr_t)image+FREE_CLICK_RVA;memcpy(info+8,&value,8);
+    value=(uintptr_t)context_class;memcpy(info,&value,8);value=(uintptr_t)image+action_profile->free_click;memcpy(info+8,&value,8);
     if(advance_info(root,(uintptr_t)context)==(uintptr_t)info)flags|=2048;
     value=0;memcpy(context+104,&value,8);if(!advance_info(root,(uintptr_t)context))flags|=4096;
     value=(uintptr_t)object;memcpy(context+104,&value,8);

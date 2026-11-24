@@ -17,12 +17,20 @@ EXTERN istaroth_outer_b_original:QWORD
 EXTERN istaroth_outer_b_next:QWORD
 PUBLIC IstarothOuterA
 PUBLIC IstarothOuterB
+PUBLIC IstarothOsOuterA
+PUBLIC IstarothOsOuterB
 PUBLIC IstarothOuterFixtureA
 PUBLIC IstarothOuterFixtureB
 PUBLIC IstarothOuterCompareA
 PUBLIC IstarothOuterNextA
 PUBLIC IstarothOuterCompareB
 PUBLIC IstarothOuterNextB
+PUBLIC IstarothOsOuterFixtureA
+PUBLIC IstarothOsOuterFixtureB
+PUBLIC IstarothOsOuterCompareA
+PUBLIC IstarothOsOuterNextA
+PUBLIC IstarothOsOuterCompareB
+PUBLIC IstarothOsOuterNextB
 PUBLIC IstarothCooldownGate
 PUBLIC IstarothCooldownFixture
 PUBLIC IstarothFixtureJump
@@ -97,6 +105,8 @@ ENDM
 
 OUTER_GATE IstarothOuterA, istaroth_outer_a_original, istaroth_outer_a_next, 030ch
 OUTER_GATE IstarothOuterB, istaroth_outer_b_original, istaroth_outer_b_next, 0348h
+OUTER_GATE IstarothOsOuterA, istaroth_outer_a_original, istaroth_outer_a_next, 02f8h
+OUTER_GATE IstarothOsOuterB, istaroth_outer_b_original, istaroth_outer_b_next, 02fch
 
 ; Owned fixtures use the same seven-byte comparison and short branch as the game.
 OUTER_FIXTURE MACRO entry_name, compare_label, next_label, deadline_offset
@@ -132,6 +142,8 @@ ENDM
 
 OUTER_FIXTURE IstarothOuterFixtureA, IstarothOuterCompareA, IstarothOuterNextA, 030ch
 OUTER_FIXTURE IstarothOuterFixtureB, IstarothOuterCompareB, IstarothOuterNextB, 0348h
+OUTER_FIXTURE IstarothOsOuterFixtureA, IstarothOsOuterCompareA, IstarothOsOuterNextA, 02f8h
+OUTER_FIXTURE IstarothOsOuterFixtureB, IstarothOsOuterCompareB, IstarothOsOuterNextB, 02fch
 
 ; Owned fixture: result bit 0 is fallthrough, bits 8..14 contain UCOMISS flags.
 IstarothCooldownFixture PROC

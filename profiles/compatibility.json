@@ -1,7 +1,20 @@
 {
-  "executable": "YuanShen.exe",
-  "sha256": "8b014f64b5dc12fbc476e0c362b053abfdd7a1378cd282e4ad81057621dbd6b5",
-  "image_size": 459665408,
+  "game_version": "7.2",
   "unknown_versions": "refuse",
-  "profile_form": "Minimal editable native headers; no full game dump or SDK is distributed."
+  "builds": [
+    {
+      "region": "CN",
+      "executable": "YuanShen.exe",
+      "timestamp": "0x6AD886FB",
+      "image_size": "0x1B65F000",
+      "sha256": "8b014f64b5dc12fbc476e0c362b053abfdd7a1378cd282e4ad81057621dbd6b5"
+    },
+    {
+      "region": "OS",
+      "executable": "GenshinImpact.exe",
+      "timestamp": "0x6AD8992C",
+      "image_size": "0x1B690000",
+      "sha256": "b3001fc110b63e0e0ce24a77386e71d0eefaffaae244ea0c72645a659cb5ea6e"
+    }
+  ]
 }
