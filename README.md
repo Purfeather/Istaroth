@@ -31,7 +31,9 @@
 
 莎莎的练习笔记和同段剧情后续的黑屏旁白已实测可以自动继续。遇到停在“点击后继续”的其他旁白，可以手动点一下。隐藏对话界面的常规剧情过场也已实测生效。第一句台词出现前，角色走进画面这类片段可能仍是原速；部分自带“跳过”按钮的动画也不支持加速。[幕布旁白验收范围](docs/CURTAIN-CANDIDATE.md)
 
-工具只支持已适配的 `YuanShen.exe` 版本。游戏更新后，如果加载器提示版本不匹配，需要等工具更新。独占全屏下的菜单显示仍待实机验证。[支持的游戏版本](profiles/compatibility.json) · [故障排查](docs/TROUBLESHOOTING.md)
+稳定版 v0.4.1 支持已适配的国服 `YuanShen.exe`。国际服适配计划在 v0.5.0-alpha.1 开始测试。维护者没有国际服客户端，实机验证仍待贡献者反馈。[国际服适配进度（PR #2）](https://github.com/Purfeather/Istaroth/pull/2)
+
+游戏更新后，如果加载器提示版本不匹配，需要等工具更新。独占全屏下的菜单显示仍待实机验证。[支持的游戏版本](profiles/compatibility.json) · [故障排查](docs/TROUBLESHOOTING.md)
 
 ## 出错时怎么反馈？
 
