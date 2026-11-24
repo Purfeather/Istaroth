@@ -2,7 +2,11 @@
 
 伊斯塔露是给 64 位 Windows 版《原神》用的剧情对话工具。比如，一段对话有十句话，你可以让它在每句话说完后自动翻到下一句，也可以把对话调快到 4 倍。离开工具能识别的剧情对话后，游戏会恢复原速。
 
-**下载 v0.4.1**　[Windows 压缩包（ZIP）](https://github.com/Purfeather/Istaroth/releases/download/v0.4.1/Istaroth-v0.4.1-win64.zip) · [本版更新](docs/RELEASE-v0.4.1.md)
+**稳定版 v0.4.1**　[Windows 压缩包（ZIP）](https://github.com/Purfeather/Istaroth/releases/download/v0.4.1/Istaroth-v0.4.1-win64.zip) · [本版更新](docs/RELEASE-v0.4.1.md)
+
+**测试版 v0.5.0-alpha.1**　[Windows 压缩包（ZIP）](https://github.com/Purfeather/Istaroth/releases/download/v0.5.0-alpha.1/Istaroth-v0.5.0-alpha.1-win64.zip) · [本版更新](docs/RELEASE-v0.5.0-alpha.1.md)
+
+感谢 [@ChiyukiKazama](https://github.com/ChiyukiKazama) 通过 [PR #2](https://github.com/Purfeather/Istaroth/pull/2) 贡献国际服适配。此 alpha 支持配置中列出的国服与国际服客户端。维护者没有国际服客户端，本版两服均待实机复测，国际服测试与后续适配仍需贡献者协助。
 
 伊斯塔露由独立开发者维护，与米哈游（miHoYo／HoYoverse）及其关联公司没有隶属、合作、授权或背书关系。工具会把组件加载到游戏里，使用它可能导致游戏异常或账号受限，包括封禁。[使用风险声明](docs/DISCLAIMER.md)
 
@@ -31,7 +35,7 @@
 
 莎莎的练习笔记和同段剧情后续的黑屏旁白已实测可以自动继续。遇到停在“点击后继续”的其他旁白，可以手动点一下。隐藏对话界面的常规剧情过场也已实测生效。第一句台词出现前，角色走进画面这类片段可能仍是原速；部分自带“跳过”按钮的动画也不支持加速。[幕布旁白验收范围](docs/CURTAIN-CANDIDATE.md)
 
-稳定版 v0.4.1 支持已适配的国服 `YuanShen.exe`。国际服适配计划在 v0.5.0-alpha.1 开始测试。维护者没有国际服客户端，实机验证仍待贡献者反馈。[国际服适配进度（PR #2）](https://github.com/Purfeather/Istaroth/pull/2)
+稳定版 v0.4.1 支持已适配的国服 `YuanShen.exe`。v0.5.0-alpha.1 新增已适配的国际服 GenshinImpact.exe 支持。维护者没有国际服客户端，实机验证仍待贡献者反馈。[国际服适配进度（PR #2）](https://github.com/Purfeather/Istaroth/pull/2)
 
 游戏更新后，如果加载器提示版本不匹配，需要等工具更新。独占全屏下的菜单显示仍待实机验证。[支持的游戏版本](profiles/compatibility.json) · [故障排查](docs/TROUBLESHOOTING.md)
 
@@ -41,6 +45,6 @@
 
 ## 源码与许可
 
-想自己编译或参与开发，可以从构建说明开始。`main` 保存已验收的源码，`develop` 用于开发中的改动。[构建说明](docs/BUILD.md) · [开发流程](docs/DEVELOPMENT.md) · [更新记录](CHANGELOG.md) · [历史版本](https://github.com/Purfeather/Istaroth/releases)
+想自己编译或参与开发，可以从构建说明开始。`main` 保存已合并的源码，`develop` 用于开发中的改动。[构建说明](docs/BUILD.md) · [开发流程](docs/DEVELOPMENT.md) · [更新记录](CHANGELOG.md) · [历史版本](https://github.com/Purfeather/Istaroth/releases)
 
 原创代码采用 Apache-2.0 许可证。Copyright 2026 Istaroth contributors。第三方代码遵循各自的许可，游戏名称、商标、角色和素材的权利归各自权利人所有。[许可证](LICENSE) · [代码来源](docs/PROVENANCE.md) · [素材权利说明](assets/RIGHTS.md)
